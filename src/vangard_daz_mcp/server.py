@@ -9673,6 +9673,88 @@ async def daz_list_requests(
 
 
 @mcp.tool()
+async def daz_wait_for_scene_event(
+    event_types: list[str],
+    timeout_seconds: int = 30,
+) -> dict[str, Any]:
+    """Wait for one of the specified scene events via the SSE stream at GET /scene/events.
+
+    Opens a Server-Sent Events connection and returns as soon as any of the
+    requested event types fires, or raises ToolError if the timeout is reached.
+
+    Common use-cases:
+    - Wait for a render to finish: event_types=["render.finished"]
+    - Detect when a file load completes: event_types=["scene.loaded"]
+    - Detect any scene or render completion: event_types=["render.finished", "scene.loaded"]
+
+    Available event types (from daz-script-server):
+        render.started, render.finished, render.progress,
+        scene.loaded, scene.saved,
+        node.added, node.removed, node.renamed,
+        selection.primary_changed,
+        time.changed,
+        playback.started, playback.stopped,
+        light.added, light.removed,
+        camera.added, camera.removed,
+        skeleton.added, skeleton.removed
+
+    The filter query param is derived automatically from the event type prefixes
+    (e.g. ["render.finished", "scene.loaded"] → ?filter=render,scene).
+
+    Args:
+        event_types: One or more event type strings to wait for.
+        timeout_seconds: Maximum seconds to wait before raising ToolError (default 30).
+
+    Returns:
+        The first matching SSE event dict, e.g.:
+        {"type": "render.finished", "ts": "2026-01-01T12:00:00Z", "data": {...}}
+    """
+    if not event_types:
+        raise ToolError("event_types must not be empty")
+
+    event_types_set = set(event_types)
+    categories = list({t.split(".")[0] for t in event_types})
+    params = {"filter": ",".join(sorted(categories))}
+
+    client = _get_client()
+
+    async def _listen() -> dict[str, Any] | None:
+        try:
+            async with client.stream(
+                "GET",
+                "/scene/events",
+                params=params,
+                timeout=float(timeout_seconds + 5),
+            ) as response:
+                _check_response(response)
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        event = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    if event.get("type") in event_types_set:
+                        return event
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+            _handle_network_error(exc)
+        return None
+
+    try:
+        result = await asyncio.wait_for(_listen(), timeout=float(timeout_seconds))
+    except asyncio.TimeoutError:
+        raise ToolError(
+            f"Timeout: none of {event_types} fired within {timeout_seconds}s"
+        )
+
+    if result is None:
+        raise ToolError(
+            f"SSE stream closed before any of {event_types} was received"
+        )
+    return result
+
+
+@mcp.tool()
 async def daz_set_render_quality(preset: str) -> dict[str, Any]:
     """Set the Iray render quality preset.
 

@@ -30,6 +30,7 @@ from vangard_daz_mcp.server import (
     daz_set_render_quality,
     daz_wait_for_request,
     daz_save_scene_copy,
+    daz_wait_for_scene_event,
 )
 
 
@@ -886,3 +887,117 @@ async def test_daz_save_scene_copy_does_not_use_script_registry(mock_daz):
     )
     await daz_save_scene_copy("C:/out.duf")
     assert not registry_called, "daz_save_scene_copy must not use the script registry"
+
+
+# ---------------------------------------------------------------------------
+# daz_wait_for_scene_event
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+def _sse_body(*events: dict) -> bytes:
+    """Build a minimal SSE body from a list of event dicts."""
+    lines = []
+    for event in events:
+        lines.append(f"data: {_json.dumps(event)}\n\n")
+    return "".join(lines).encode()
+
+
+async def test_daz_wait_for_scene_event_returns_matching_event(mock_daz):
+    event = {"type": "render.finished", "ts": "2026-01-01T00:00:00Z", "data": {"path": "/out.png"}}
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(event),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+    assert result["type"] == "render.finished"
+    assert result["data"]["path"] == "/out.png"
+
+
+async def test_daz_wait_for_scene_event_skips_non_matching_events(mock_daz):
+    """Events before the matching one should be skipped."""
+    events = [
+        {"type": "time.changed", "ts": "2026-01-01T00:00:00Z", "data": {}},
+        {"type": "scene.loaded", "ts": "2026-01-01T00:00:01Z", "data": {"file": "hero.duf"}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["scene.loaded"], timeout_seconds=5)
+    assert result["type"] == "scene.loaded"
+
+
+async def test_daz_wait_for_scene_event_multiple_types(mock_daz):
+    """Returns first event whose type is in the requested set."""
+    events = [
+        {"type": "node.added", "ts": "2026-01-01T00:00:00Z", "data": {}},
+        {"type": "render.started", "ts": "2026-01-01T00:00:01Z", "data": {}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["render.started", "render.finished"], timeout_seconds=5)
+    assert result["type"] == "render.started"
+
+
+async def test_daz_wait_for_scene_event_stream_closed_without_match_raises(mock_daz):
+    """If the stream ends without a matching event, ToolError is raised."""
+    events = [
+        {"type": "time.changed", "ts": "2026-01-01T00:00:00Z", "data": {}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    with pytest.raises(ToolError, match="SSE stream closed"):
+        await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_connect_error_raises(mock_daz):
+    mock_daz.get("/scene/events").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError, match="DAZ Studio is running"):
+        await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_empty_event_types_raises(mock_daz):
+    with pytest.raises(ToolError, match="empty"):
+        await daz_wait_for_scene_event([], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_filter_param_derived_from_categories(mock_daz):
+    """The ?filter query param should use category prefixes, not full event type names."""
+    event = {"type": "render.finished", "ts": "2026-01-01T00:00:00Z", "data": {}}
+
+    captured_params = {}
+
+    def capture_request(request):
+        captured_params["filter"] = request.url.params.get("filter", "")
+        return httpx.Response(
+            200,
+            content=_sse_body(event),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    mock_daz.get("/scene/events").mock(side_effect=capture_request)
+    await daz_wait_for_scene_event(["render.finished", "scene.loaded"], timeout_seconds=5)
+
+    # Filter should contain category prefixes, not full dotted names
+    filter_val = captured_params["filter"]
+    assert "render" in filter_val
+    assert "scene" in filter_val
+    assert "render.finished" not in filter_val
