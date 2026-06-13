@@ -18,6 +18,9 @@ DAZ_TIMEOUT = float(os.environ.get("DAZ_TIMEOUT", "30.0"))
 
 BASE_URL = f"http://{DAZ_HOST}:{DAZ_PORT}"
 
+# Content browser (daz-content-browser FastAPI server)
+CONTENT_BROWSER_URL = os.environ.get("DAZ_CONTENT_BROWSER_URL", "http://localhost:8080")
+
 _TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".daz3d", "dazscriptserver_token.txt")
 
 
@@ -51,6 +54,8 @@ except (OSError, json.JSONDecodeError) as e:
 
 # Shared HTTP client; initialised by the lifespan, torn down on exit.
 _http_client: httpx.AsyncClient | None = None
+# Separate client for the content browser server (may be absent).
+_content_browser_client: httpx.AsyncClient | None = None
 
 # Macro recording state (session-level, in-memory)
 _macro_recording: bool = False
@@ -61,12 +66,15 @@ _macro_library: dict[str, dict[str, Any]] = {}
 @asynccontextmanager
 async def lifespan(server: FastMCP):
     """Create and tear down the shared httpx.AsyncClient."""
-    global _http_client
+    global _http_client, _content_browser_client
     headers = {"X-API-Token": DAZ_API_TOKEN} if DAZ_API_TOKEN else {}
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=DAZ_TIMEOUT, headers=headers) as client:
         _http_client = client
         await _register_scripts(client)
-        yield
+        async with httpx.AsyncClient(base_url=CONTENT_BROWSER_URL, timeout=DAZ_TIMEOUT) as cb_client:
+            _content_browser_client = cb_client
+            yield
+        _content_browser_client = None
     _http_client = None
 
 
@@ -81,6 +89,12 @@ def _get_client() -> httpx.AsyncClient:
     if _http_client is None:
         raise RuntimeError("HTTP client not initialised — server lifespan not running")
     return _http_client
+
+
+def _get_content_browser_client() -> httpx.AsyncClient:
+    if _content_browser_client is None:
+        raise RuntimeError("Content browser client not initialised — server lifespan not running")
+    return _content_browser_client
 
 
 def _handle_network_error(exc: Exception) -> None:
@@ -13533,6 +13547,83 @@ async def daz_save_scene_copy(path: str) -> dict[str, Any]:
         _handle_network_error(exc)
     _check_response(response)
     return response.json()
+
+
+# ---------------------------------------------------------------------------
+# Content Browser tools (daz-content-browser vector search server)
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_search_content(query: str, max_results: int = 10) -> dict[str, Any]:
+    """Search the DAZ product catalog using semantic vector search.
+
+    Calls the daz-content-browser FastAPI server (POST /api/v1/search).
+    Returns a list of matching products with sku, name, description,
+    compatible_figures, tags, and store_url fields.
+
+    Returns {"available": false, "reason": "..."} gracefully if the content
+    browser is not running.
+
+    Args:
+        query: Natural-language search query, e.g. "sci-fi armor for Genesis 9".
+        max_results: Maximum number of results to return (default 10).
+    """
+    client = _get_content_browser_client()
+    try:
+        response = await client.post(
+            "/api/v1/search",
+            json={"query": query, "max_results": max_results},
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+        return {"available": False, "reason": "Content browser not reachable at " + CONTENT_BROWSER_URL}
+    if response.status_code != 200:
+        return {"available": False, "reason": f"Content browser returned HTTP {response.status_code}"}
+    return response.json()
+
+
+@mcp.tool()
+async def daz_load_product(product_name: str) -> dict[str, Any]:
+    """Find a DAZ product by name and load it into the current scene.
+
+    Queries the daz-content-browser product index (GET /api/v1/products?q=<name>)
+    to resolve the absolute .duf path, then calls POST /api/v1/scene/load which
+    delegates to the DazScriptServer to merge the asset into the scene.
+
+    Returns {"available": false, "reason": "..."} gracefully if the content
+    browser is not running or no matching product is found.
+
+    Args:
+        product_name: Partial or full product name to search for.
+    """
+    client = _get_content_browser_client()
+    try:
+        search_response = await client.get("/api/v1/products", params={"q": product_name})
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+        return {"available": False, "reason": "Content browser not reachable at " + CONTENT_BROWSER_URL}
+    if search_response.status_code != 200:
+        return {"available": False, "reason": f"Content browser returned HTTP {search_response.status_code}"}
+
+    products = search_response.json()
+    if isinstance(products, dict):
+        products = products.get("products", products.get("results", []))
+    if not products:
+        return {"available": True, "found": False, "reason": f"No product found matching '{product_name}'"}
+
+    product = products[0]
+    duf_path = product.get("path") or product.get("file_path") or product.get("duf_path")
+    if not duf_path:
+        return {"available": True, "found": True, "error": "Product record has no file path", "product": product}
+
+    try:
+        load_response = await client.post("/api/v1/scene/load", json={"path": duf_path})
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+        return {"available": False, "reason": "Content browser not reachable during load"}
+    if load_response.status_code != 200:
+        return {"available": False, "reason": f"Scene load returned HTTP {load_response.status_code}"}
+
+    result = load_response.json()
+    result["product"] = product
+    return result
 
 
 def main() -> None:
