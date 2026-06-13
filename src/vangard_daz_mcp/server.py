@@ -218,6 +218,33 @@ async def _execute_by_id_async(
     return response.json()
 
 
+async def _execute_render(params: dict[str, Any]) -> dict[str, Any]:
+    """Submit a render via POST /render; returns {request_id, status, submitted_at}.
+
+    Bypasses the script registry — uses the dedicated render endpoint which
+    supports native width/height/engine/camera/morphs parameters and proper
+    render-specific cancellation via POST /render/:id/cancel.
+    """
+    client = _get_client()
+    try:
+        response = await client.post("/render", json=params)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+        _handle_network_error(exc)
+    _check_response(response)
+    return response.json()
+
+
+async def _execute_render_batch(body: dict[str, Any]) -> dict[str, Any]:
+    """Submit a render batch via POST /render/batch; returns {request_ids, total}."""
+    client = _get_client()
+    try:
+        response = await client.post("/render/batch", json=body)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+        _handle_network_error(exc)
+    _check_response(response)
+    return response.json()
+
+
 # ---------------------------------------------------------------------------
 # Embedded DazScript fragments
 #
@@ -9275,49 +9302,84 @@ async def daz_validate_scene() -> dict[str, Any]:
 
 @mcp.tool()
 async def daz_render_async(
-    output_path: str | None = None,
+    output_path: str,
+    width: int | None = None,
+    height: int | None = None,
+    camera: str | None = None,
+    engine: str | None = None,
+    iray_samples: int | None = None,
 ) -> dict[str, Any]:
-    """Start a render asynchronously — returns immediately with a request_id.
+    """Start a render asynchronously via the dedicated render endpoint — returns immediately.
 
-    Use daz_get_request_status() to poll progress and daz_get_request_result()
-    to retrieve the final result.
+    Uses POST /render directly, which supports native render parameters and
+    proper cancellation via daz_cancel_request(). Cancel IDs returned here have
+    the prefix "rnd-" and are routed to /render/:id/cancel automatically.
+
+    Use daz_get_request_status() to poll and daz_get_request_result() for the result.
 
     IMPORTANT: The scene is locked while the render runs. Do not modify the
     scene until the request status is "completed", "failed", or "cancelled".
 
     Args:
-        output_path: Optional file path for the rendered image.
+        output_path: Absolute file path for the rendered image (required).
+        width: Render width in pixels. Must be paired with height.
+        height: Render height in pixels. Must be paired with width.
+        camera: Camera label to render from (default: active render camera).
+        engine: Render engine — "iray", "3delight", or "filament".
+        iray_samples: Iray max samples (overrides current quality settings).
 
     Returns:
-        {"request_id": "script-XXXXXXXX", "status": "queued", "submitted_at": "..."}
+        {"request_id": "rnd-XXXXXXXX", "status": "queued", "submitted_at": "..."}
     """
-    args: dict[str, Any] = {}
-    if output_path is not None:
-        args["outputPath"] = output_path
-    return await _execute_by_id_async("vangard-render", args)
+    params: dict[str, Any] = {"output_path": output_path}
+    if width is not None:
+        params["width"] = width
+    if height is not None:
+        params["height"] = height
+    if camera is not None:
+        params["camera"] = camera
+    if engine is not None:
+        params["engine"] = engine
+    if iray_samples is not None:
+        params["iray_samples"] = iray_samples
+    return await _execute_render(params)
 
 
 @mcp.tool()
 async def daz_render_with_camera_async(
     camera_label: str,
-    output_path: str | None = None,
+    output_path: str,
+    width: int | None = None,
+    height: int | None = None,
+    engine: str | None = None,
+    iray_samples: int | None = None,
 ) -> dict[str, Any]:
     """Start a camera-specific render asynchronously — returns immediately with a request_id.
 
-    Renders from the specified camera without changing the active viewport camera.
-    Use daz_get_request_status() to poll and daz_get_request_result() for the result.
+    Convenience wrapper over daz_render_async that pins the camera. Renders from
+    the specified camera without changing the active viewport camera.
 
     Args:
         camera_label: Display label of the camera to render from.
-        output_path: Optional file path for the rendered image.
+        output_path: Absolute file path for the rendered image.
+        width: Render width in pixels (must pair with height).
+        height: Render height in pixels (must pair with width).
+        engine: Render engine — "iray", "3delight", or "filament".
+        iray_samples: Iray max samples override.
 
     Returns:
-        {"request_id": "script-XXXXXXXX", "status": "queued", "submitted_at": "..."}
+        {"request_id": "rnd-XXXXXXXX", "status": "queued", "submitted_at": "..."}
     """
-    args: dict[str, Any] = {"cameraLabel": camera_label}
-    if output_path is not None:
-        args["outputPath"] = output_path
-    return await _execute_by_id_async("vangard-render-with-camera", args)
+    params: dict[str, Any] = {"output_path": output_path, "camera": camera_label}
+    if width is not None:
+        params["width"] = width
+    if height is not None:
+        params["height"] = height
+    if engine is not None:
+        params["engine"] = engine
+    if iray_samples is not None:
+        params["iray_samples"] = iray_samples
+    return await _execute_render(params)
 
 
 @mcp.tool()
@@ -9325,21 +9387,24 @@ async def daz_batch_render_cameras_async(
     cameras: list[str],
     output_dir: str,
     base_filename: str = "render",
+    engine: str | None = None,
+    iray_samples: int | None = None,
 ) -> dict[str, Any]:
-    """Queue renders from multiple cameras — each becomes its own async request.
+    """Queue renders from multiple cameras as a validated batch.
 
-    Submits one async render per camera and returns all request IDs immediately.
-    Renders execute serially (DAZ is single-threaded), so they queue behind any
-    already-running request. Each camera render is independently cancellable.
+    Uses POST /render/batch which validates ALL cameras before enqueuing any render.
+    This is all-or-nothing: if any camera name is invalid the entire batch is rejected.
 
     Args:
         cameras: List of camera display labels.
         output_dir: Directory where rendered images are saved.
         base_filename: Filename prefix. Output is <base_filename>_<camera>.png.
+        engine: Render engine for all variants — "iray", "3delight", or "filament".
+        iray_samples: Iray max samples override for all variants.
 
     Returns:
         {
-            "request_ids": ["script-XXXXXXXX", ...],
+            "request_ids": ["rnd-XXXXXXXX", ...],
             "total": 3,
             "cameras": ["Cam_0", "Cam_45", "Cam_90"]
         }
@@ -9347,27 +9412,72 @@ async def daz_batch_render_cameras_async(
     Example:
         batch = await daz_batch_render_cameras_async(
             cameras=["Cam_0", "Cam_45", "Cam_90"],
-            output_dir="/renders/turntable"
+            output_dir="C:/renders/turntable"
         )
-        # Monitor all renders
         for req_id in batch["request_ids"]:
             result = await daz_get_request_result(req_id, wait=True)
     """
     import os as _os
-    request_ids: list[str] = []
-    for cam in cameras:
-        output_path = _os.path.join(output_dir, f"{base_filename}_{cam}.png")
-        result = await _execute_by_id_async(
-            "vangard-render-with-camera",
-            {"cameraLabel": cam, "outputPath": output_path},
-        )
-        request_ids.append(result["request_id"])
+    base: dict[str, Any] = {}
+    if engine is not None:
+        base["engine"] = engine
+    if iray_samples is not None:
+        base["iray_samples"] = iray_samples
 
+    variants = [
+        {"output_path": _os.path.join(output_dir, f"{base_filename}_{cam}.png"), "camera": cam}
+        for cam in cameras
+    ]
+    body: dict[str, Any] = {"variants": variants}
+    if base:
+        body["base"] = base
+
+    data = await _execute_render_batch(body)
     return {
-        "request_ids": request_ids,
-        "total": len(request_ids),
+        "request_ids": data.get("request_ids", []),
+        "total": data.get("total", len(cameras)),
         "cameras": cameras,
     }
+
+
+@mcp.tool()
+async def daz_render_batch(
+    variants: list[dict[str, Any]],
+    base: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Submit a batch of render variants — validated and queued atomically.
+
+    Uses POST /render/batch. All variants are validated before any render is
+    enqueued (all-or-nothing). Renders execute serially but are each independently
+    cancellable via daz_cancel_request().
+
+    Args:
+        variants: List of render specs. Each must include ``output_path``. Optional
+                  per-variant overrides: ``width``, ``height``, ``camera``, ``engine``,
+                  ``iray_samples``, ``figure``/``figures``, ``morphs``.
+        base: Default settings shared by all variants. Same keys as variants. Overridden
+              by any key present in the variant itself.
+
+    Returns:
+        {
+            "request_ids": ["rnd-XXXXXXXX", ...],
+            "total": 5
+        }
+
+    Example — product photography with expression variants:
+        daz_render_batch(
+            base={"figure": "Genesis 9", "width": 1920, "height": 1080},
+            variants=[
+                {"output_path": "C:/out/neutral.png", "morphs": {"Smile": 0.0}},
+                {"output_path": "C:/out/smile.png",   "morphs": {"Smile": 1.0}},
+                {"output_path": "C:/out/serious.png", "morphs": {"Brow Down": 0.5}},
+            ]
+        )
+    """
+    body: dict[str, Any] = {"variants": variants}
+    if base is not None:
+        body["base"] = base
+    return await _execute_render_batch(body)
 
 
 @mcp.tool()
@@ -9495,11 +9605,16 @@ async def daz_cancel_request(request_id: str) -> dict[str, Any]:
     """Cancel a queued or running async request.
 
     For queued requests: cancellation is immediate.
-    For running renders: sends a killRender() signal; may take a few seconds
-    to take effect.
+    For running renders: sends a killRender() signal to DAZ Studio; may take a
+    few seconds to take effect as the renderer finishes the current tile.
+
+    Render requests (IDs starting with "rnd-") are routed to POST /render/:id/cancel
+    which issues killRender(). Script requests use DELETE /requests/:id.
 
     Args:
-        request_id: Request ID returned by an async submission tool.
+        request_id: Request ID returned by an async submission tool
+                    (e.g. "rnd-XXXXXXXX" from daz_render_async,
+                     "script-XXXXXXXX" from _execute_by_id_async).
 
     Returns:
         {"request_id": "...", "status": "cancelled", "cancelled_at": "..."}
@@ -9509,9 +9624,14 @@ async def daz_cancel_request(request_id: str) -> dict[str, Any]:
     """
     client = _get_client()
     try:
-        response = await client.delete(f"/requests/{request_id}")
+        if request_id.startswith("rnd-"):
+            response = await client.post(f"/render/{request_id}/cancel")
+        else:
+            response = await client.delete(f"/requests/{request_id}")
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
         _handle_network_error(exc)
+    if response.status_code == 404:
+        raise ToolError(f"Request not found: {request_id}")
     _check_response(response)
     return response.json()
 
@@ -13293,6 +13413,44 @@ async def daz_reset_pose(
         "vangard-reset-pose",
         {"nodeLabel": node_label, "zeroTransforms": zero_transforms},
     )
+
+
+@mcp.tool()
+async def daz_save_scene_copy(path: str) -> dict[str, Any]:
+    """Save a copy of the current scene to a new path without changing the scene's filename.
+
+    Unlike ``daz_save_scene`` with a new path (which performs a Save As and updates
+    the scene's internal filename pointer), this tool preserves the original filename.
+    For clean scenes it does a pure file copy; for dirty scenes it saves to the
+    destination then restores the original filename.
+
+    Args:
+        path: Absolute destination path for the copy
+              (e.g. ``"C:/backups/scene_backup.duf"``).
+
+    Returns:
+        Dict with:
+        - ok: True on success
+        - path: destination path written
+        - source: original scene path that was copied
+        - method: ``"file-copy"`` (clean scene) or ``"save-restore"`` (dirty scene)
+
+    Examples:
+        daz_save_scene_copy("C:/backups/hero_v02.duf")
+        daz_save_scene_copy("D:/archive/shot_001_backup.duf")
+
+    Notes:
+        - The scene's active filename remains unchanged after this call.
+        - Use ``daz_save_scene`` when you actually want to switch to a new file.
+        - If the destination directory does not exist the server will raise an error.
+    """
+    client = _get_client()
+    try:
+        response = await client.post("/scene/save-copy", json={"path": path})
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+        _handle_network_error(exc)
+    _check_response(response)
+    return response.json()
 
 
 def main() -> None:
