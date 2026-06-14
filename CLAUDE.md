@@ -25,6 +25,7 @@
 - **Phase 5:** Gap Coverage — `daz_list_materials`, `daz_get_material`, `daz_set_material_property`, `daz_set_morph`, `daz_delete_node`, `daz_list_lights`, `daz_create_light`, `daz_list_cameras`, `daz_create_camera`, `daz_save_scene`, `daz_get_selected_nodes`, `daz_set_render_output`, `daz_reset_pose`
 - **Phase 6.1:** Wardrobe — `daz_list_fitted_items`, `daz_fit_clothing`, `daz_unfit_item`
 - **Phase 6.2:** dForce Simulation — `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
+- **Phase 6.3:** Pose Library — `daz_save_pose`, `daz_load_pose`
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

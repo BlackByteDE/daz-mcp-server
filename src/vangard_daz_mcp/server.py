@@ -6987,6 +6987,100 @@ _SET_DFORCE_PROPERTY_SCRIPT = """\
 })()
 """
 
+_COLLECT_POSE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var figLabel = args.figureLabel;
+    var fig = Scene.findNodeByLabel(figLabel);
+    if (!fig) fig = Scene.findNode(figLabel);
+    if (!fig) throw new Error("Figure not found: " + figLabel);
+
+    var bones = {};
+    var count = 0;
+
+    function collectBone(node) {
+        var boneName = node.getName();
+        var xr = node.findProperty("XRotate");
+        var yr = node.findProperty("YRotate");
+        var zr = node.findProperty("ZRotate");
+        var xt = node.findProperty("XTranslate");
+        var yt = node.findProperty("YTranslate");
+        var zt = node.findProperty("ZTranslate");
+        var hasData = xr || yr || zr || xt || yt || zt;
+        if (hasData) {
+            bones[boneName] = {
+                xr: xr ? xr.getValue() : 0,
+                yr: yr ? yr.getValue() : 0,
+                zr: zr ? zr.getValue() : 0,
+                xt: xt ? xt.getValue() : 0,
+                yt: yt ? yt.getValue() : 0,
+                zt: zt ? zt.getValue() : 0
+            };
+            count++;
+        }
+        for (var i = 0; i < node.getNumNodeChildren(); i++) {
+            collectBone(node.getNodeChild(i));
+        }
+    }
+    collectBone(fig);
+
+    return {
+        figure: fig.getLabel(),
+        figure_name: fig.getName(),
+        bone_count: count,
+        bones: bones
+    };
+})()
+"""
+
+_APPLY_POSE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var figLabel = args.figureLabel;
+    var bonesData = args.bones || {};
+
+    var fig = Scene.findNodeByLabel(figLabel);
+    if (!fig) fig = Scene.findNode(figLabel);
+    if (!fig) throw new Error("Figure not found: " + figLabel);
+
+    var applied = 0;
+    var skipped = 0;
+
+    function applyBone(node) {
+        var boneName = node.getName();
+        var data = bonesData[boneName];
+        if (data) {
+            var xr = node.findProperty("XRotate");
+            var yr = node.findProperty("YRotate");
+            var zr = node.findProperty("ZRotate");
+            var xt = node.findProperty("XTranslate");
+            var yt = node.findProperty("YTranslate");
+            var zt = node.findProperty("ZTranslate");
+            if (xr && data.xr !== undefined) xr.setValue(data.xr);
+            if (yr && data.yr !== undefined) yr.setValue(data.yr);
+            if (zr && data.zr !== undefined) zr.setValue(data.zr);
+            if (xt && data.xt !== undefined) xt.setValue(data.xt);
+            if (yt && data.yt !== undefined) yt.setValue(data.yt);
+            if (zt && data.zt !== undefined) zt.setValue(data.zt);
+            applied++;
+        } else {
+            skipped++;
+        }
+        for (var i = 0; i < node.getNumNodeChildren(); i++) {
+            applyBone(node.getNodeChild(i));
+        }
+    }
+    applyBone(fig);
+
+    return {
+        success: true,
+        figure: fig.getLabel(),
+        bones_applied: applied,
+        bones_skipped: skipped
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -7387,6 +7481,15 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-set-dforce-property": (
         "Set a dForce modifier property (stiffness, gravity scale, etc.) on a scene node",
         _SET_DFORCE_PROPERTY_SCRIPT,
+    ),
+    # Phase 6.3: Pose library
+    "vangard-collect-pose": (
+        "Collect all bone rotation/translation values from a figure and return as structured data",
+        _COLLECT_POSE_SCRIPT,
+    ),
+    "vangard-apply-pose": (
+        "Apply a dict of bone rotation/translation values to a figure by bone name",
+        _APPLY_POSE_SCRIPT,
     ),
 }
 
@@ -14090,6 +14193,148 @@ async def daz_set_dforce_property(
         "vangard-set-dforce-property",
         {"nodeLabel": node_label, "propertyName": property_name, "value": value},
     )
+
+
+# ---------------------------------------------------------------------------
+# Pose library tools — Phase 6.3
+# ---------------------------------------------------------------------------
+
+_POSE_BONE_GROUPS: dict[str, set[str]] = {
+    "arms_only": {
+        "lShldrBend", "rShldrBend", "lShldrTwist", "rShldrTwist",
+        "lForearmBend", "rForearmBend", "lForearmTwist", "rForearmTwist",
+        "lHand", "rHand",
+        "l_upperarm", "r_upperarm", "l_forearm", "r_forearm",
+        "l_hand", "r_hand",
+    },
+    "legs_only": {
+        "lThighBend", "rThighBend", "lThighTwist", "rThighTwist",
+        "lShin", "rShin", "lFoot", "rFoot", "lToe", "rToe",
+        "l_thigh", "r_thigh", "l_shin", "r_shin", "l_foot", "r_foot",
+    },
+    "spine": {
+        "hip", "pelvis",
+        "abdomenLower", "abdomenUpper", "chestLower", "chestUpper",
+        "neckLower", "neckUpper", "head",
+        "spine1", "spine2", "spine3", "spine4",
+        "neck1", "neck2",
+    },
+}
+
+
+@mcp.tool()
+async def daz_save_pose(
+    figure_label: str,
+    pose_name: str,
+    output_path: str,
+) -> dict[str, Any]:
+    """Capture all bone rotations and translations from a figure and save to a JSON pose file.
+
+    Walks the entire bone hierarchy of the named figure, reads XRotate/YRotate/ZRotate
+    and XTranslate/YTranslate/ZTranslate for each bone, and writes the result as a JSON
+    file at ``output_path``.  The file can later be loaded with ``daz_load_pose``.
+
+    Args:
+        figure_label: Display label of the source figure (e.g. ``"Genesis 9"``).
+        pose_name: Human-readable name stored inside the pose file (e.g. ``"T-Pose"``).
+        output_path: Absolute path where the ``.json`` pose file will be written
+            (e.g. ``"C:/poses/hero_idle.json"``).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - figure: confirmed figure label
+        - pose_name: name stored in the file
+        - bone_count: number of bones captured
+        - file: absolute path written
+
+    Examples:
+        daz_save_pose("Genesis 9", "Hero Idle", "C:/poses/hero_idle.json")
+        daz_save_pose("Victoria 9", "Sitting Pose", "D:/assets/sitting.json")
+    """
+    raw = await _execute_by_id("vangard-collect-pose", {"figureLabel": figure_label})
+    payload = {
+        "version": "1.0",
+        "type": "vangard_pose",
+        "pose_name": pose_name,
+        "figure": raw.get("figure", figure_label),
+        "bone_count": raw.get("bone_count", 0),
+        "bones": raw.get("bones", {}),
+    }
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {
+        "success": True,
+        "figure": raw.get("figure", figure_label),
+        "pose_name": pose_name,
+        "bone_count": raw.get("bone_count", 0),
+        "file": str(out),
+    }
+
+
+@mcp.tool()
+async def daz_load_pose(
+    figure_label: str,
+    pose_path: str,
+    bone_group: str = "full",
+) -> dict[str, Any]:
+    """Load a saved pose JSON file and apply it to a figure.
+
+    Reads a pose file created by ``daz_save_pose`` and applies bone rotations
+    and translations to the named figure.  The optional ``bone_group`` filter
+    limits which bones are updated.
+
+    Args:
+        figure_label: Display label of the target figure (e.g. ``"Genesis 9"``).
+        pose_path: Absolute path to the ``.json`` pose file created by
+            ``daz_save_pose`` (e.g. ``"C:/poses/hero_idle.json"``).
+        bone_group: Which bones to apply.  Options:
+            - ``"full"`` (default) — all bones in the file
+            - ``"arms_only"`` — shoulders, forearms, hands
+            - ``"legs_only"`` — thighs, shins, feet
+            - ``"spine"`` — hip, pelvis, spine chain, neck, head
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - figure: confirmed figure label
+        - pose_name: name from the pose file
+        - bones_applied: number of bones whose values were written
+        - bones_skipped: number of bones not found on the figure
+
+    Examples:
+        daz_load_pose("Genesis 9", "C:/poses/hero_idle.json")
+        daz_load_pose("Genesis 9", "C:/poses/hero_idle.json", bone_group="arms_only")
+        daz_load_pose("Clone 1", "C:/poses/sitting.json", bone_group="spine")
+    """
+    p = Path(pose_path)
+    if not p.exists():
+        raise ToolError(f"Pose file not found: {pose_path}")
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"Invalid pose file (JSON parse error): {exc}") from exc
+
+    if data.get("type") != "vangard_pose":
+        raise ToolError(f"File is not a vangard pose file (type={data.get('type')!r})")
+
+    bones: dict[str, Any] = data.get("bones", {})
+    if bone_group != "full":
+        allowed = _POSE_BONE_GROUPS.get(bone_group)
+        if allowed is None:
+            raise ToolError(
+                f"Unknown bone_group {bone_group!r}. "
+                f"Valid values: full, arms_only, legs_only, spine"
+            )
+        bones = {k: v for k, v in bones.items() if k in allowed}
+
+    result = await _execute_by_id(
+        "vangard-apply-pose",
+        {"figureLabel": figure_label, "bones": bones},
+    )
+    result["pose_name"] = data.get("pose_name", "")
+    return result
 
 
 # ---------------------------------------------------------------------------
