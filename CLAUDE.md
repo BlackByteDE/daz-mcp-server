@@ -15,7 +15,7 @@
 ## Architecture Summary
 - **Version:** 0.3.0
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 89 tools registered for high-performance execution.
+- **Registry:** 95 tools registered for high-performance execution.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
 - **Phase 4.10:** Focus & DOF — `daz_set_focus_point`, `daz_animate_focus_pull`
@@ -23,6 +23,8 @@
 - **Phase 4.12:** Multi-Scene Management — `daz_export_node_config`, `daz_import_node_config`
 - **Phase 4.13:** Performance Timing — `daz_time_expression`, `daz_sync_character_beats`
 - **Phase 5:** Gap Coverage — `daz_list_materials`, `daz_get_material`, `daz_set_material_property`, `daz_set_morph`, `daz_delete_node`, `daz_list_lights`, `daz_create_light`, `daz_list_cameras`, `daz_create_camera`, `daz_save_scene`, `daz_get_selected_nodes`, `daz_set_render_output`, `daz_reset_pose`
+- **Phase 6.1:** Wardrobe — `daz_list_fitted_items`, `daz_fit_clothing`, `daz_unfit_item`
+- **Phase 6.2:** dForce Simulation — `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

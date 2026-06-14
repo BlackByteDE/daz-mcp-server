@@ -6809,6 +6809,184 @@ _UNFIT_ITEM_SCRIPT = """\
 })()
 """
 
+_RUN_DFORCE_SIMULATION_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var timeStep = Scene.getTimeStep();
+    var startFrame = args.startFrame !== undefined ? parseInt(args.startFrame) : 0;
+    var endFrame = args.endFrame !== undefined
+        ? parseInt(args.endFrame)
+        : Math.round(Scene.getAnimRange().end / timeStep);
+
+    if (nodeLabel) {
+        var node = Scene.findNodeByLabel(nodeLabel);
+        if (!node) node = Scene.findNode(nodeLabel);
+        if (!node) throw new Error("Node not found: " + nodeLabel);
+        Scene.clearSelection();
+        Scene.selectNode(node);
+    }
+
+    var simMgr = App.getSimulationMgr ? App.getSimulationMgr() : null;
+    if (!simMgr) throw new Error("DzSimulationMgr not available via App.getSimulationMgr()");
+
+    if (typeof simMgr.simulate === 'function') {
+        var range = new DzTimeRange(startFrame * timeStep, endFrame * timeStep);
+        simMgr.simulate(range);
+    } else {
+        var methods = [];
+        for (var k in simMgr) { if (typeof simMgr[k] === 'function') methods.push(k); }
+        throw new Error("simulate() not found on DzSimulationMgr. Available: " + methods.join(", "));
+    }
+
+    return {
+        success: true,
+        node: nodeLabel || "all simulatable nodes",
+        start_frame: startFrame,
+        end_frame: endFrame
+    };
+})()
+"""
+
+_BAKE_SIMULATION_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    if (nodeLabel) {
+        var node = Scene.findNodeByLabel(nodeLabel);
+        if (!node) node = Scene.findNode(nodeLabel);
+        if (!node) throw new Error("Node not found: " + nodeLabel);
+        Scene.clearSelection();
+        Scene.selectNode(node);
+    }
+
+    var simMgr = App.getSimulationMgr ? App.getSimulationMgr() : null;
+    if (!simMgr) throw new Error("DzSimulationMgr not available via App.getSimulationMgr()");
+
+    var bakeMethod = null;
+    if (typeof simMgr.bakeSimulation === 'function') {
+        simMgr.bakeSimulation();
+        bakeMethod = "bakeSimulation";
+    } else if (typeof simMgr.freezeSimulation === 'function') {
+        simMgr.freezeSimulation();
+        bakeMethod = "freezeSimulation";
+    } else if (typeof simMgr.bakeCurrentPose === 'function') {
+        simMgr.bakeCurrentPose();
+        bakeMethod = "bakeCurrentPose";
+    } else {
+        var methods = [];
+        for (var k in simMgr) { if (typeof simMgr[k] === 'function') methods.push(k); }
+        throw new Error("No bake method found on DzSimulationMgr. Available: " + methods.join(", "));
+    }
+
+    return {
+        success: true,
+        node: nodeLabel || "all",
+        method: bakeMethod
+    };
+})()
+"""
+
+_SET_DFORCE_PROPERTY_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var propertyName = args.propertyName;
+    var value = parseFloat(args.value);
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    var modifier = null;
+
+    // Search node-level modifiers first
+    if (typeof node.getNumModifiers === 'function') {
+        for (var i = 0; i < node.getNumModifiers(); i++) {
+            var mod = node.getModifier(i);
+            if (mod) {
+                var cn = mod.className ? mod.className() : "";
+                if (cn.toLowerCase().indexOf("dforce") !== -1 || cn.toLowerCase().indexOf("dynamics") !== -1) {
+                    modifier = mod;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Fall back to shape-level modifiers
+    if (!modifier && typeof node.getObject === 'function') {
+        var obj = node.getObject();
+        if (obj) {
+            var shape = obj.getCurrentShape ? obj.getCurrentShape() : null;
+            if (shape && typeof shape.getNumModifiers === 'function') {
+                for (var j = 0; j < shape.getNumModifiers(); j++) {
+                    var mod2 = shape.getModifier(j);
+                    if (mod2) {
+                        var cn2 = mod2.className ? mod2.className() : "";
+                        if (cn2.toLowerCase().indexOf("dforce") !== -1 || cn2.toLowerCase().indexOf("dynamics") !== -1) {
+                            modifier = mod2;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!modifier) {
+        var nodeModNames = [];
+        if (typeof node.getNumModifiers === 'function') {
+            for (var nm = 0; nm < node.getNumModifiers(); nm++) {
+                var m = node.getModifier(nm);
+                if (m) nodeModNames.push(m.className ? m.className() : "unknown");
+            }
+        }
+        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Node modifiers: [" + nodeModNames.join(", ") + "]");
+    }
+
+    // Find property: exact name first, then case-insensitive
+    var prop = typeof modifier.findProperty === 'function' ? modifier.findProperty(propertyName) : null;
+    if (!prop) {
+        var propCount = typeof modifier.getNumProperties === 'function' ? modifier.getNumProperties() : 0;
+        for (var p = 0; p < propCount; p++) {
+            var mp = modifier.getProperty(p);
+            if (mp && mp.getName().toLowerCase() === propertyName.toLowerCase()) {
+                prop = mp;
+                break;
+            }
+        }
+    }
+
+    if (!prop) {
+        var available = [];
+        var propCount2 = typeof modifier.getNumProperties === 'function' ? modifier.getNumProperties() : 0;
+        for (var p2 = 0; p2 < propCount2; p2++) {
+            var mp2 = modifier.getProperty(p2);
+            if (mp2) available.push(mp2.getName());
+        }
+        throw new Error("Property '" + propertyName + "' not found on dForce modifier. Available: " + available.join(", "));
+    }
+
+    var oldValue = typeof prop.getValue === 'function' ? prop.getValue() : null;
+    if (typeof prop.setDoubleValue === 'function') {
+        prop.setDoubleValue(value);
+    } else if (typeof prop.setValue === 'function') {
+        prop.setValue(value);
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        modifier: modifier.className ? modifier.className() : "unknown",
+        property: prop.getName(),
+        old_value: oldValue,
+        new_value: value
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -7196,6 +7374,19 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-unfit-item": (
         "Remove the fitting relationship between a clothing/prop item and its figure",
         _UNFIT_ITEM_SCRIPT,
+    ),
+    # Phase 6.2: dForce simulation
+    "vangard-run-dforce-simulation": (
+        "Run dForce cloth/hair simulation for a frame range, optionally limited to one node",
+        _RUN_DFORCE_SIMULATION_SCRIPT,
+    ),
+    "vangard-bake-simulation": (
+        "Bake dForce simulation results to keyframes so the simulated shape is preserved",
+        _BAKE_SIMULATION_SCRIPT,
+    ),
+    "vangard-set-dforce-property": (
+        "Set a dForce modifier property (stiffness, gravity scale, etc.) on a scene node",
+        _SET_DFORCE_PROPERTY_SCRIPT,
     ),
 }
 
@@ -13772,6 +13963,133 @@ async def daz_unfit_item(item_label: str) -> dict[str, Any]:
         daz_unfit_item("Hat Prop")
     """
     return await _execute_by_id("vangard-unfit-item", {"itemLabel": item_label})
+
+
+# ---------------------------------------------------------------------------
+# dForce simulation tools — Phase 6.2
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_run_dforce_simulation(
+    node_label: str | None = None,
+    start_frame: int = 0,
+    end_frame: int | None = None,
+) -> dict[str, Any]:
+    """Run dForce cloth or hair simulation for a frame range.
+
+    Triggers the DAZ Studio simulation engine (``DzSimulationMgr``) for all
+    simulatable nodes in the scene, or limits the simulation to a single node
+    when ``node_label`` is provided (the node is selected before the sim runs).
+
+    dForce modifiers must already be present on the target clothing or hair
+    node.  Use ``daz_set_dforce_property`` to tune modifier settings before
+    calling this tool.
+
+    Args:
+        node_label: Display label of the clothing or hair node to simulate.
+            When omitted the entire scene is simulated.
+        start_frame: First frame of the simulation range (default 0).
+        end_frame: Last frame of the simulation range.  When omitted the
+            scene's current end frame is used.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: node label that was targeted, or "all simulatable nodes"
+        - start_frame: effective start frame
+        - end_frame: effective end frame
+
+    Examples:
+        daz_run_dforce_simulation("Outfit", 0, 60)
+        daz_run_dforce_simulation(start_frame=0, end_frame=120)
+    """
+    args: dict[str, Any] = {"startFrame": start_frame}
+    if node_label is not None:
+        args["nodeLabel"] = node_label
+    if end_frame is not None:
+        args["endFrame"] = end_frame
+    return await _execute_by_id("vangard-run-dforce-simulation", args)
+
+
+@mcp.tool()
+async def daz_bake_simulation(node_label: str | None = None) -> dict[str, Any]:
+    """Bake dForce simulation results to keyframes.
+
+    Converts the in-memory dForce simulation cache to actual keyframes on the
+    simulated vertices/bones so the result is preserved when the scene is saved
+    or the simulation cache is cleared.
+
+    Call this after ``daz_run_dforce_simulation`` to lock down the simulated
+    shape.  The node selection behaviour mirrors ``daz_run_dforce_simulation``:
+    when ``node_label`` is given the node is selected first; otherwise all
+    currently simulated nodes are baked.
+
+    Args:
+        node_label: Display label of the node to bake.  When omitted all
+            simulated nodes are baked.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: node label that was targeted, or "all"
+        - method: the DazScript method used to bake
+
+    Examples:
+        daz_bake_simulation("Outfit")
+        daz_bake_simulation()
+    """
+    args: dict[str, Any] = {}
+    if node_label is not None:
+        args["nodeLabel"] = node_label
+    return await _execute_by_id("vangard-bake-simulation", args)
+
+
+@mcp.tool()
+async def daz_set_dforce_property(
+    node_label: str,
+    property_name: str,
+    value: float,
+) -> dict[str, Any]:
+    """Set a dForce modifier property on a scene node.
+
+    Locates the dForce modifier attached to the named node (checking both
+    node-level and shape-level modifiers) and sets the named property to the
+    given value.  Common property names include:
+
+    - ``"Dynamics Strength"`` — 0–1, overall simulation influence
+    - ``"Stretch Stiffness"`` — resistance to stretching
+    - ``"Shear Stiffness"`` — resistance to shearing deformation
+    - ``"Bend Stiffness"`` — resistance to bending
+    - ``"Gravity Scale"`` — multiplier on the scene gravity (1.0 = normal)
+    - ``"Density"`` — simulated mass per unit area
+    - ``"Global Damping"`` — velocity damping applied each timestep
+
+    If the property name is not found exactly, a case-insensitive fallback
+    search is attempted.  On failure the error lists all available properties.
+
+    Args:
+        node_label: Display label of the clothing or hair node.
+        property_name: Internal name of the dForce modifier property to set.
+        value: Numeric value to apply.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - modifier: class name of the dForce modifier that was modified
+        - property: confirmed property name (may differ from input if fuzzy-matched)
+        - old_value: value before the change
+        - new_value: value that was set
+
+    Examples:
+        daz_set_dforce_property("Outfit", "Dynamics Strength", 1.0)
+        daz_set_dforce_property("Hair", "Gravity Scale", 0.5)
+        daz_set_dforce_property("Dress", "Bend Stiffness", 0.2)
+    """
+    return await _execute_by_id(
+        "vangard-set-dforce-property",
+        {"nodeLabel": node_label, "propertyName": property_name, "value": value},
+    )
 
 
 # ---------------------------------------------------------------------------
