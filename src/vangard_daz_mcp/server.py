@@ -6683,6 +6683,132 @@ _RESET_POSE_SCRIPT = """\
 })()
 """
 
+_LIST_FITTED_ITEMS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var fig = Scene.findNodeByLabel(args.figureLabel);
+    if (!fig) fig = Scene.findNode(args.figureLabel);
+    if (!fig) throw new Error("Figure not found: " + args.figureLabel);
+
+    var fitted = [];
+    var numNodes = Scene.getNumNodes();
+    for (var i = 0; i < numNodes; i++) {
+        var node = Scene.getNode(i);
+        if (!node || node === fig) continue;
+
+        var isFitted = false;
+        var itemType = "prop";
+
+        // Figure-based clothing/hair: it has a follow target pointing at our figure
+        if (typeof node.getFollowTarget === 'function') {
+            var ft = node.getFollowTarget();
+            if (ft && ft.elementID === fig.elementID) {
+                isFitted = true;
+                itemType = node.inherits("DzHair") ? "hair" : "clothing";
+            }
+        }
+
+        // Props/accessories: directly parented to the figure node
+        if (!isFitted && typeof node.getNodeParent === 'function') {
+            var parent = node.getNodeParent();
+            if (parent && parent.elementID === fig.elementID) {
+                isFitted = true;
+                itemType = node.inherits("DzHair") ? "hair" : "prop";
+            }
+        }
+
+        if (isFitted) {
+            fitted.push({
+                label: node.getLabel(),
+                name: node.getName(),
+                type: itemType,
+                element_id: node.elementID
+            });
+        }
+    }
+
+    return {
+        figure: fig.getLabel(),
+        fitted_count: fitted.length,
+        fitted_items: fitted
+    };
+})()
+"""
+
+_FIT_CLOTHING_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var clothing = Scene.findNodeByLabel(args.clothingLabel);
+    if (!clothing) clothing = Scene.findNode(args.clothingLabel);
+    if (!clothing) throw new Error("Clothing node not found: " + args.clothingLabel);
+
+    var figure = Scene.findNodeByLabel(args.figureLabel);
+    if (!figure) figure = Scene.findNode(args.figureLabel);
+    if (!figure) throw new Error("Figure not found: " + args.figureLabel);
+
+    var method;
+    if (typeof clothing.setFollowTarget === 'function') {
+        clothing.setFollowTarget(figure);
+        method = "setFollowTarget";
+    } else if (typeof clothing.followSkeleton === 'function') {
+        clothing.followSkeleton(figure);
+        method = "followSkeleton";
+    } else {
+        // Fallback: parent the item to the figure preserving world position
+        figure.addNodeChild(clothing, true);
+        method = "addNodeChild";
+    }
+
+    return {
+        success: true,
+        clothing: clothing.getLabel(),
+        figure: figure.getLabel(),
+        method: method
+    };
+})()
+"""
+
+_UNFIT_ITEM_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var item = Scene.findNodeByLabel(args.itemLabel);
+    if (!item) item = Scene.findNode(args.itemLabel);
+    if (!item) throw new Error("Item not found: " + args.itemLabel);
+
+    var prevFigureLabel = null;
+    var methods = [];
+
+    // Remove follow target if one exists
+    if (typeof item.getFollowTarget === 'function') {
+        var ft = item.getFollowTarget();
+        if (ft) {
+            prevFigureLabel = ft.getLabel();
+            if (typeof item.setFollowTarget === 'function') {
+                item.setFollowTarget(null);
+                methods.push("cleared follow target");
+            }
+        }
+    }
+
+    // Detach from parent figure (props parented directly)
+    if (typeof item.getNodeParent === 'function') {
+        var parent = item.getNodeParent();
+        if (parent && parent.inherits && parent.inherits("DzSkeleton")) {
+            prevFigureLabel = prevFigureLabel || parent.getLabel();
+            parent.removeNodeChild(item, true);  // true = inPlace: preserve world position
+            methods.push("detached from parent");
+        }
+    }
+
+    return {
+        success: true,
+        item: item.getLabel(),
+        previous_figure: prevFigureLabel,
+        actions: methods.length ? methods : ["no fitting relationship found"]
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -7058,6 +7184,18 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-reset-pose": (
         "Zero all bone rotations on a figure recursively; optionally zero root transforms too",
         _RESET_POSE_SCRIPT,
+    ),
+    "vangard-list-fitted-items": (
+        "List all clothing, hair, and prop nodes fitted or parented to a figure",
+        _LIST_FITTED_ITEMS_SCRIPT,
+    ),
+    "vangard-fit-clothing": (
+        "Fit a clothing or prop node to a base figure using follow-target or parenting",
+        _FIT_CLOTHING_SCRIPT,
+    ),
+    "vangard-unfit-item": (
+        "Remove the fitting relationship between a clothing/prop item and its figure",
+        _UNFIT_ITEM_SCRIPT,
     ),
 }
 
@@ -13547,6 +13685,93 @@ async def daz_save_scene_copy(path: str) -> dict[str, Any]:
         _handle_network_error(exc)
     _check_response(response)
     return response.json()
+
+
+# ---------------------------------------------------------------------------
+# Wardrobe tools — Phase 6.1
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_list_fitted_items(figure_label: str) -> dict[str, Any]:
+    """List all clothing, hair, and prop nodes currently fitted to a figure.
+
+    Returns every scene node that either follows the named figure (figure-based
+    conforming clothing and hair) or is directly parented to it (props and
+    accessories).  Each item includes its display label, internal name, type
+    classification (``clothing``, ``hair``, or ``prop``), and element ID.
+
+    Args:
+        figure_label: Display label of the base figure (e.g. ``"Genesis 9"``).
+
+    Returns:
+        Dict with keys:
+        - figure: confirmed figure label
+        - fitted_count: total number of fitted items
+        - fitted_items: list of {label, name, type, element_id}
+
+    Examples:
+        daz_list_fitted_items("Genesis 9")
+        daz_list_fitted_items("Victoria 9")
+    """
+    return await _execute_by_id("vangard-list-fitted-items", {"figureLabel": figure_label})
+
+
+@mcp.tool()
+async def daz_fit_clothing(clothing_label: str, figure_label: str) -> dict[str, Any]:
+    """Fit a clothing or prop item to a base figure.
+
+    For figure-based conforming clothing (items that are themselves a DzFigure),
+    this sets the follow target so the clothing deforms with the figure's pose.
+    For props and accessories, it parents the item to the figure.
+
+    The clothing item must already be loaded into the scene.  Use
+    ``daz_load_file`` or ``daz_load_product`` to add it first.
+
+    Args:
+        clothing_label: Display label of the clothing/prop node to fit.
+        figure_label: Display label of the target base figure.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - clothing: confirmed clothing label
+        - figure: confirmed figure label
+        - method: which API was used (``setFollowTarget``, ``followSkeleton``,
+          or ``addNodeChild`` for the parenting fallback)
+
+    Examples:
+        daz_fit_clothing("Sci-Fi Bodysuit", "Genesis 9")
+        daz_fit_clothing("Leather Jacket", "Genesis 8 Female")
+    """
+    return await _execute_by_id(
+        "vangard-fit-clothing",
+        {"clothingLabel": clothing_label, "figureLabel": figure_label},
+    )
+
+
+@mcp.tool()
+async def daz_unfit_item(item_label: str) -> dict[str, Any]:
+    """Remove the fitting relationship between a clothing/prop item and its figure.
+
+    Clears any follow-target relationship (conforming clothing) and detaches the
+    item from its parent figure (props), leaving it as a free-standing scene node
+    at its current world position.
+
+    Args:
+        item_label: Display label of the item to unfit.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - item: confirmed item label
+        - previous_figure: label of the figure it was detached from (or null)
+        - actions: list of operations performed
+
+    Examples:
+        daz_unfit_item("Sci-Fi Bodysuit")
+        daz_unfit_item("Hat Prop")
+    """
+    return await _execute_by_id("vangard-unfit-item", {"itemLabel": item_label})
 
 
 # ---------------------------------------------------------------------------
