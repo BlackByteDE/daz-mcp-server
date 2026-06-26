@@ -13,9 +13,9 @@
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.3.0
+- **Version:** 0.4.0
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 95 tools registered for high-performance execution.
+- **Registry:** 102 tools registered for high-performance execution.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
 - **Phase 4.10:** Focus & DOF — `daz_set_focus_point`, `daz_animate_focus_pull`
@@ -26,6 +26,9 @@
 - **Phase 6.1:** Wardrobe — `daz_list_fitted_items`, `daz_fit_clothing`, `daz_unfit_item`
 - **Phase 6.2:** dForce Simulation — `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
 - **Phase 6.3:** Pose Library — `daz_save_pose`, `daz_load_pose`
+- **Phase 6.4:** Material Preset — `daz_apply_material_preset`, `daz_copy_material`
+- **Phase 6.5:** Figure Diagnostics — `daz_get_figure_info`, `daz_set_subdivision`
+- **Phase 6.6:** Scene Export — `daz_export_fbx`, `daz_export_obj`
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

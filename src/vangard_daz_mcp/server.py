@@ -7081,6 +7081,366 @@ _APPLY_POSE_SCRIPT = """\
 })()
 """
 
+# ---------------------------------------------------------------------------
+# Phase 6.4: Material preset scripts
+# ---------------------------------------------------------------------------
+
+_APPLY_MATERIAL_PRESET_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var presetPath = args.presetPath;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    // Select only the target node so the preset applies to it
+    Scene.selectAllNodes(false);
+    node.select(true);
+
+    var ioSettings = new DzFileIOSettings();
+    var ok = App.getContentMgr().openFile(presetPath, ioSettings, false);
+    if (!ok) throw new Error("Failed to apply material preset. Check that the path exists and is a valid .duf material file: " + presetPath);
+
+    // Collect resulting material names for confirmation
+    var shape = typeof node.getObject === 'function' ? node.getObject() : null;
+    var matNames = [];
+    if (shape) {
+        for (var i = 0; i < shape.getNumMaterials(); i++) {
+            var mat = shape.getMaterial(i);
+            if (mat) matNames.push(mat.getLabel());
+        }
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        preset: presetPath,
+        materials: matNames,
+        material_count: matNames.length
+    };
+})()
+"""
+
+_COPY_MATERIAL_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var srcNodeLabel = args.sourceNodeLabel;
+    var srcMatName = args.sourceMaterialName;
+    var dstNodeLabel = args.destNodeLabel;
+    var dstMatName = args.destMaterialName;
+
+    // Resolve source node + material
+    var srcNode = Scene.findNodeByLabel(srcNodeLabel);
+    if (!srcNode) srcNode = Scene.findNode(srcNodeLabel);
+    if (!srcNode) throw new Error("Source node not found: " + srcNodeLabel);
+
+    var srcShape = typeof srcNode.getObject === 'function' ? srcNode.getObject() : null;
+    if (!srcShape) throw new Error("Source node has no geometry: " + srcNodeLabel);
+
+    var srcMat = null;
+    for (var i = 0; i < srcShape.getNumMaterials(); i++) {
+        var m = srcShape.getMaterial(i);
+        if (m && (m.getLabel() === srcMatName || m.getName() === srcMatName)) {
+            srcMat = m;
+            break;
+        }
+    }
+    if (!srcMat) {
+        var srcNames = [];
+        for (var ii = 0; ii < srcShape.getNumMaterials(); ii++) {
+            var mm = srcShape.getMaterial(ii);
+            if (mm) srcNames.push(mm.getLabel());
+        }
+        throw new Error("Material '" + srcMatName + "' not found on " + srcNodeLabel + ". Available: " + srcNames.join(", "));
+    }
+
+    // Resolve dest node + material
+    var dstNode = Scene.findNodeByLabel(dstNodeLabel);
+    if (!dstNode) dstNode = Scene.findNode(dstNodeLabel);
+    if (!dstNode) throw new Error("Dest node not found: " + dstNodeLabel);
+
+    var dstShape = typeof dstNode.getObject === 'function' ? dstNode.getObject() : null;
+    if (!dstShape) throw new Error("Dest node has no geometry: " + dstNodeLabel);
+
+    var dstMat = null;
+    for (var j = 0; j < dstShape.getNumMaterials(); j++) {
+        var n = dstShape.getMaterial(j);
+        if (n && (n.getLabel() === dstMatName || n.getName() === dstMatName)) {
+            dstMat = n;
+            break;
+        }
+    }
+    if (!dstMat) {
+        var dstNames = [];
+        for (var jj = 0; jj < dstShape.getNumMaterials(); jj++) {
+            var nn = dstShape.getMaterial(jj);
+            if (nn) dstNames.push(nn.getLabel());
+        }
+        throw new Error("Material '" + dstMatName + "' not found on " + dstNodeLabel + ". Available: " + dstNames.join(", "));
+    }
+
+    // Copy properties from source to destination
+    var copied = 0;
+    var skipped = 0;
+    for (var p = 0; p < srcMat.getNumProperties(); p++) {
+        var srcProp = srcMat.getProperty(p);
+        if (!srcProp) continue;
+        var dstProp = dstMat.findProperty(srcProp.getName());
+        if (!dstProp) { skipped++; continue; }
+        try {
+            if (typeof srcProp.getValue === 'function' && typeof dstProp.setValue === 'function') {
+                dstProp.setValue(srcProp.getValue());
+                copied++;
+            } else {
+                skipped++;
+            }
+        } catch(e) {
+            skipped++;
+        }
+    }
+
+    return {
+        success: true,
+        source: srcNodeLabel + "/" + srcMat.getLabel(),
+        destination: dstNodeLabel + "/" + dstMat.getLabel(),
+        properties_copied: copied,
+        properties_skipped: skipped
+    };
+})()
+"""
+
+# ---------------------------------------------------------------------------
+# Phase 6.5: Figure diagnostics scripts
+# ---------------------------------------------------------------------------
+
+_GET_FIGURE_INFO_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var figLabel = args.figureLabel;
+
+    var fig = Scene.findNodeByLabel(figLabel);
+    if (!fig) fig = Scene.findNode(figLabel);
+    if (!fig) throw new Error("Figure not found: " + figLabel);
+
+    var figName = fig.getName() || "";
+
+    // Detect Genesis generation from node name and label (most reliable in DazScript)
+    var generation = "other";
+    var checkStr = (figName + " " + figLabel).toLowerCase();
+    if (checkStr.indexOf("genesis 9") !== -1 || checkStr.indexOf("genesis9") !== -1 ||
+        checkStr.indexOf("g9f") !== -1 || checkStr.indexOf("g9m") !== -1) {
+        generation = "Genesis9";
+    } else if (checkStr.indexOf("genesis 8") !== -1 || checkStr.indexOf("genesis8") !== -1 ||
+               checkStr.indexOf("g8f") !== -1 || checkStr.indexOf("g8m") !== -1) {
+        generation = "Genesis8";
+    } else if (checkStr.indexOf("genesis 3") !== -1 || checkStr.indexOf("genesis3") !== -1 ||
+               checkStr.indexOf("g3f") !== -1 || checkStr.indexOf("g3m") !== -1) {
+        generation = "Genesis3";
+    } else if (checkStr.indexOf("genesis 2") !== -1 || checkStr.indexOf("genesis2") !== -1 ||
+               checkStr.indexOf("g2f") !== -1 || checkStr.indexOf("g2m") !== -1) {
+        generation = "Genesis2";
+    } else if (checkStr.indexOf("genesis") !== -1) {
+        generation = "Genesis";
+    }
+
+    // Detect sex from name/label heuristics and generation-suffix
+    var sex = "unknown";
+    if (checkStr.indexOf("female") !== -1 || checkStr.indexOf("victoria") !== -1 ||
+        checkStr.indexOf("aiko") !== -1 || checkStr.indexOf("stephanie") !== -1 ||
+        checkStr.indexOf("g9f") !== -1 || checkStr.indexOf("g8f") !== -1 ||
+        checkStr.indexOf("g3f") !== -1 || checkStr.indexOf("g2f") !== -1) {
+        sex = "female";
+    } else if (checkStr.indexOf("male") !== -1 || checkStr.indexOf("michael") !== -1 ||
+               checkStr.indexOf("victor") !== -1 || checkStr.indexOf("g9m") !== -1 ||
+               checkStr.indexOf("g8m") !== -1 || checkStr.indexOf("g3m") !== -1 ||
+               checkStr.indexOf("g2m") !== -1) {
+        sex = "male";
+    }
+
+    // Collect active morphs (non-zero numeric properties in morph/actor/shape paths)
+    var activeMorphs = [];
+    for (var i = 0; i < fig.getNumProperties(); i++) {
+        var prop = fig.getProperty(i);
+        if (!prop) continue;
+        if (typeof prop.inherits === 'function' && !prop.inherits("DzFloatProperty")) continue;
+        var path = typeof prop.getPath === 'function' ? prop.getPath() : "";
+        var pLower = path.toLowerCase();
+        var inMorphSection = pLower.indexOf("morph") !== -1 || pLower.indexOf("actor") !== -1 ||
+                             pLower.indexOf("shape") !== -1 || pLower.indexOf("expression") !== -1 ||
+                             pLower.indexOf("pose") !== -1;
+        if (!inMorphSection) continue;
+        var val = typeof prop.getValue === 'function' ? prop.getValue() : 0;
+        if (Math.abs(val) > 0.0005) {
+            activeMorphs.push({ name: prop.getName(), label: prop.getLabel(), value: val, path: path });
+        }
+    }
+
+    // Count fitted items (nodes with follow target pointing to this figure, or direct children)
+    var fittedCount = 0;
+    var myID = fig.getElementID();
+    for (var n = 0; n < Scene.getNumNodes(); n++) {
+        var other = Scene.getNode(n);
+        if (!other || other.getElementID() === myID) continue;
+        if (typeof other.getFollowTarget === 'function') {
+            var ft = other.getFollowTarget();
+            if (ft && ft.getElementID() === myID) { fittedCount++; continue; }
+        }
+        if (typeof other.getNodeParent === 'function') {
+            var par = other.getNodeParent();
+            if (par && par.getElementID() === myID) fittedCount++;
+        }
+    }
+
+    // Subdivision level
+    var subDivProp = fig.findProperty("SubDivision Level");
+    if (!subDivProp) subDivProp = fig.findProperty("Subdivision Level");
+    if (!subDivProp) subDivProp = fig.findProperty("Subdivision");
+    var subDivLevel = subDivProp ? (typeof subDivProp.getValue === 'function' ? subDivProp.getValue() : 0) : 0;
+
+    return {
+        label: fig.getLabel(),
+        name: fig.getName(),
+        generation: generation,
+        sex: sex,
+        active_morphs: activeMorphs,
+        active_morph_count: activeMorphs.length,
+        fitted_item_count: fittedCount,
+        subdivision_level: subDivLevel
+    };
+})()
+"""
+
+_SET_SUBDIVISION_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var level = parseInt(args.level);
+    if (isNaN(level) || level < 0) level = 0;
+    if (level > 4) level = 4;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    // Search for subdivision property by common names
+    var prop = node.findProperty("SubDivision Level");
+    if (!prop) prop = node.findProperty("Subdivision Level");
+    if (!prop) prop = node.findProperty("Subdivision");
+    if (!prop) prop = node.findProperty("SDiv");
+
+    // Fallback: linear scan for any property containing "subdivision"
+    if (!prop) {
+        for (var i = 0; i < node.getNumProperties(); i++) {
+            var p = node.getProperty(i);
+            if (p && p.getName().toLowerCase().indexOf("subdivision") !== -1) {
+                prop = p;
+                break;
+            }
+        }
+    }
+
+    if (!prop) {
+        throw new Error("No subdivision property found on '" + nodeLabel + "'. This node may not support subdivision.");
+    }
+
+    var oldValue = typeof prop.getValue === 'function' ? prop.getValue() : null;
+    if (typeof prop.setValue === 'function') {
+        prop.setValue(level);
+    } else {
+        throw new Error("Subdivision property is read-only on '" + nodeLabel + "'.");
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        property: prop.getName(),
+        old_level: oldValue,
+        new_level: level
+    };
+})()
+"""
+
+# ---------------------------------------------------------------------------
+# Phase 6.6: Scene export script (shared; format param selects FBX vs OBJ)
+# ---------------------------------------------------------------------------
+
+_EXPORT_SCENE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var outputPath = args.outputPath;
+    var nodeLabels = args.nodeLabels || [];
+    var format = args.format || "Filmbox";
+    var includeMorphs = args.includeMorphs !== false;
+    var applyCurrentPose = args.applyCurrentPose !== false;
+    var scaleFactor = args.scaleFactor !== undefined ? parseFloat(args.scaleFactor) : 1.0;
+
+    if (!outputPath) throw new Error("outputPath is required");
+
+    // Select nodes for export
+    Scene.selectAllNodes(false);
+    var exportedLabels = [];
+
+    if (nodeLabels.length === 0) {
+        // Export all top-level nodes (full scene)
+        for (var i = 0; i < Scene.getNumNodes(); i++) {
+            var n = Scene.getNode(i);
+            if (n) { n.select(true); exportedLabels.push(n.getLabel()); }
+        }
+    } else {
+        for (var j = 0; j < nodeLabels.length; j++) {
+            var n2 = Scene.findNodeByLabel(nodeLabels[j]);
+            if (!n2) n2 = Scene.findNode(nodeLabels[j]);
+            if (n2) { n2.select(true); exportedLabels.push(n2.getLabel()); }
+        }
+        if (exportedLabels.length === 0) {
+            throw new Error("None of the specified nodes were found in the scene: " + nodeLabels.join(", "));
+        }
+    }
+
+    var exportMgr = App.getExportMgr();
+    if (!exportMgr) throw new Error("DzExportMgr not available in this version of DAZ Studio.");
+
+    // Build IO settings
+    var settings = new DzFileIOSettings();
+    settings.setBoolValue("SelectedOnly", true);
+    settings.setBoolValue("Morphs", includeMorphs);
+    settings.setBoolValue("Pose", applyCurrentPose);
+    settings.setFloatValue("Scale", scaleFactor);
+
+    // Attempt export; doExport returns true on success
+    var ok = exportMgr.doExport(outputPath, format, settings);
+
+    if (!ok) {
+        // List available exporters for a helpful error message
+        var available = [];
+        var numExp = typeof exportMgr.getNumExporters === 'function' ? exportMgr.getNumExporters() : 0;
+        for (var k = 0; k < numExp; k++) {
+            var exp = exportMgr.getExporter(k);
+            if (exp && typeof exp.getDescription === 'function') {
+                available.push(exp.getDescription());
+            }
+        }
+        var hint = available.length > 0
+            ? " Available exporters: " + available.join(", ") + "."
+            : " No exporters found — the required DAZ Studio exporter plugin may not be installed.";
+        throw new Error("Export to '" + format + "' failed." + hint);
+    }
+
+    return {
+        success: true,
+        format: format,
+        output_path: outputPath,
+        exported_nodes: exportedLabels,
+        node_count: exportedLabels.length,
+        include_morphs: includeMorphs,
+        apply_current_pose: applyCurrentPose,
+        scale_factor: scaleFactor
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -7490,6 +7850,29 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-apply-pose": (
         "Apply a dict of bone rotation/translation values to a figure by bone name",
         _APPLY_POSE_SCRIPT,
+    ),
+    # Phase 6.4: Material preset
+    "vangard-apply-material-preset": (
+        "Apply a .duf material preset file to a named scene node",
+        _APPLY_MATERIAL_PRESET_SCRIPT,
+    ),
+    "vangard-copy-material": (
+        "Copy all property values from one material slot to another within the scene",
+        _COPY_MATERIAL_SCRIPT,
+    ),
+    # Phase 6.5: Figure diagnostics
+    "vangard-get-figure-info": (
+        "Return generation, sex, active morphs, fitted item count, and subdivision level for a figure",
+        _GET_FIGURE_INFO_SCRIPT,
+    ),
+    "vangard-set-subdivision": (
+        "Set the SubDivision Level property on a figure or prop (integer 0–4)",
+        _SET_SUBDIVISION_SCRIPT,
+    ),
+    # Phase 6.6: Scene export
+    "vangard-export-scene": (
+        "Export selected nodes to FBX or OBJ via DzExportMgr",
+        _EXPORT_SCENE_SCRIPT,
     ),
 }
 
@@ -14412,6 +14795,287 @@ async def daz_load_product(product_name: str) -> dict[str, Any]:
     result = load_response.json()
     result["product"] = product
     return result
+
+
+# ---------------------------------------------------------------------------
+# Material preset tools — Phase 6.4
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_apply_material_preset(node_label: str, preset_path: str) -> dict[str, Any]:
+    """Apply a DAZ material preset (.duf) file to a scene node.
+
+    Selects the named node and calls ``App.getContentMgr().openFile()`` with the
+    preset path so DAZ Studio applies the material channels defined in the file.
+    This is the same operation as dragging a material preset from Smart Content
+    onto a figure in the DAZ Studio UI.
+
+    The node must already be present in the scene.  The preset must be a material
+    preset ``.duf`` file — not a full scene or prop file.
+
+    Args:
+        node_label: Display label of the node to apply the material to
+            (e.g. ``"Genesis 9"``).
+        preset_path: Absolute path to the ``.duf`` material preset file
+            (e.g. ``"C:/DAZ/My Library/Materials/Skin/Hero Skin.duf"``).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - preset: path used
+        - materials: list of material slot labels on the node after application
+        - material_count: number of material slots
+
+    Examples:
+        daz_apply_material_preset("Genesis 9", "C:/Library/Materials/Skin/Hero Skin.duf")
+        daz_apply_material_preset("Genesis 9", "D:/assets/Mats/Sci-Fi Suit.duf")
+    """
+    return await _execute_by_id(
+        "vangard-apply-material-preset",
+        {"nodeLabel": node_label, "presetPath": preset_path},
+    )
+
+
+@mcp.tool()
+async def daz_copy_material(
+    source_node: str,
+    source_material_name: str,
+    dest_node: str,
+    dest_material_name: str,
+) -> dict[str, Any]:
+    """Copy all property values from one material slot to another within the scene.
+
+    Iterates every property on the source material and sets the matching property
+    on the destination material.  Properties that exist on the source but not the
+    destination are silently skipped.  Both nodes must already be loaded in the scene.
+
+    Useful for duplicating a skin material from one character to another, or
+    copying a surface finish between props of the same type.
+
+    Args:
+        source_node: Display label of the node that owns the source material.
+        source_material_name: Label or name of the source material slot
+            (e.g. ``"Skin"`` or ``"1_SkinFace"``).
+        dest_node: Display label of the node that owns the destination material.
+        dest_material_name: Label or name of the destination material slot.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - source: "NodeLabel/MaterialLabel" for the source
+        - destination: "NodeLabel/MaterialLabel" for the destination
+        - properties_copied: number of properties successfully copied
+        - properties_skipped: number of properties not found on the destination
+
+    Examples:
+        daz_copy_material("Genesis 9", "Skin", "Clone 1", "Skin")
+        daz_copy_material("Hero Suit", "Metal", "Villain Suit", "Metal")
+    """
+    return await _execute_by_id(
+        "vangard-copy-material",
+        {
+            "sourceNodeLabel": source_node,
+            "sourceMaterialName": source_material_name,
+            "destNodeLabel": dest_node,
+            "destMaterialName": dest_material_name,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Figure diagnostics tools — Phase 6.5
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_get_figure_info(figure_label: str) -> dict[str, Any]:
+    """Return diagnostic information about a loaded figure.
+
+    Detects the Genesis generation and biological sex from the figure's internal
+    name and label, lists all morphs that currently have a non-zero value, counts
+    the number of clothing/prop items fitted to the figure, and reports the active
+    subdivision level.
+
+    This is the recommended first call when working with an unfamiliar figure, as
+    it determines which morph names, bone names, and fitting approaches apply.
+
+    Args:
+        figure_label: Display label of the figure to inspect
+            (e.g. ``"Genesis 9"`` or ``"Victoria 9"``).
+
+    Returns:
+        Dict with keys:
+        - label: confirmed display label
+        - name: internal node name
+        - generation: ``"Genesis9"``, ``"Genesis8"``, ``"Genesis3"``, ``"Genesis2"``,
+          ``"Genesis"``, or ``"other"``
+        - sex: ``"female"``, ``"male"``, or ``"unknown"``
+        - active_morphs: list of {name, label, value, path} for morphs with |value| > 0.0005
+        - active_morph_count: length of active_morphs list
+        - fitted_item_count: number of clothing/prop nodes following or parented to this figure
+        - subdivision_level: current SubDivision Level value (0 if property absent)
+
+    Examples:
+        daz_get_figure_info("Genesis 9")
+        daz_get_figure_info("Victoria 9")
+        daz_get_figure_info("Michael 8")
+    """
+    return await _execute_by_id("vangard-get-figure-info", {"figureLabel": figure_label})
+
+
+@mcp.tool()
+async def daz_set_subdivision(node_label: str, level: int) -> dict[str, Any]:
+    """Set the SubDivision Level property on a figure or prop.
+
+    Higher subdivision levels smooth geometry at the cost of memory and render
+    time.  Level 0 is base mesh; levels 1–4 progressively refine the mesh.
+    DAZ Studio's default render subdivision is typically 1 or 2.
+
+    Args:
+        node_label: Display label of the figure or prop to adjust
+            (e.g. ``"Genesis 9"`` or ``"Car Prop"``).
+        level: Desired subdivision level.  Clamped to the range 0–4.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - property: name of the subdivision property that was set
+        - old_level: previous value
+        - new_level: value after update
+
+    Examples:
+        daz_set_subdivision("Genesis 9", 2)
+        daz_set_subdivision("Car Prop", 0)
+        daz_set_subdivision("Hair", 1)
+
+    Notes:
+        Raises ToolError if the node has no subdivision property (e.g. a light
+        or camera).  Use ``daz_get_figure_info`` to check the current level first.
+    """
+    if level < 0 or level > 4:
+        raise ToolError(f"Subdivision level must be between 0 and 4, got {level}")
+    return await _execute_by_id("vangard-set-subdivision", {"nodeLabel": node_label, "level": level})
+
+
+# ---------------------------------------------------------------------------
+# Scene export tools — Phase 6.6
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def daz_export_fbx(
+    output_path: str,
+    node_labels: list[str] | None = None,
+    include_morphs: bool = True,
+    apply_current_pose: bool = True,
+    scale_factor: float = 1.0,
+) -> dict[str, Any]:
+    """Export scene nodes to an FBX file via DAZ Studio's Filmbox exporter.
+
+    Selects the specified nodes (or all scene nodes if none are given) and
+    calls ``DzExportMgr.doExport`` with the ``"Filmbox"`` exporter.  Returns a
+    graceful error if the FBX exporter plugin is not installed in DAZ Studio.
+
+    FBX is the standard interchange format for game engines (Unreal, Unity) and
+    VFX pipelines (Maya, 3ds Max, Blender).
+
+    Args:
+        output_path: Absolute path for the output ``.fbx`` file
+            (e.g. ``"C:/exports/hero.fbx"``).  The parent directory must exist.
+        node_labels: List of node display labels to export.  Pass ``None`` or an
+            empty list to export all nodes in the scene.
+        include_morphs: Whether to bake morph targets into the export (default True).
+        apply_current_pose: Whether to export the current frame's pose (default True).
+        scale_factor: Uniform scale applied to exported geometry (default 1.0).
+            Use ``0.01`` to convert DAZ's centimetres to metres for Unity/Unreal.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - format: ``"Filmbox"``
+        - output_path: path written
+        - exported_nodes: list of node labels included in the export
+        - node_count: number of exported nodes
+        - include_morphs, apply_current_pose, scale_factor: echoed settings
+
+    Examples:
+        daz_export_fbx("C:/exports/hero.fbx")
+        daz_export_fbx("C:/exports/hero.fbx", node_labels=["Genesis 9", "Sci-Fi Suit"])
+        daz_export_fbx("C:/exports/hero.fbx", scale_factor=0.01, include_morphs=False)
+
+    Notes:
+        Raises ToolError if the FBX exporter is not installed.  The error message
+        lists available exporters so you can choose an alternative format.
+    """
+    return await _execute_by_id(
+        "vangard-export-scene",
+        {
+            "outputPath": output_path,
+            "nodeLabels": node_labels or [],
+            "format": "Filmbox",
+            "includeMorphs": include_morphs,
+            "applyCurrentPose": apply_current_pose,
+            "scaleFactor": scale_factor,
+        },
+    )
+
+
+@mcp.tool()
+async def daz_export_obj(
+    output_path: str,
+    node_labels: list[str] | None = None,
+    apply_current_pose: bool = True,
+    scale_factor: float = 1.0,
+) -> dict[str, Any]:
+    """Export scene nodes to a Wavefront OBJ file via DAZ Studio's OBJ exporter.
+
+    Selects the specified nodes (or all scene nodes if none are given) and
+    calls ``DzExportMgr.doExport`` with the ``"Wavefront Object"`` exporter.
+    Returns a graceful error if the OBJ exporter plugin is not installed.
+
+    OBJ is a widely supported geometry-only format suitable for Blender,
+    ZBrush, Marvelous Designer, and other tools that need a static mesh.
+    It does not carry animations or morph targets.
+
+    Args:
+        output_path: Absolute path for the output ``.obj`` file
+            (e.g. ``"C:/exports/hero_base.obj"``).  Parent directory must exist.
+        node_labels: List of node display labels to export.  Pass ``None`` or an
+            empty list to export all nodes in the scene.
+        apply_current_pose: Whether to export the geometry in the current
+            frame's posed state (default True).
+        scale_factor: Uniform scale applied to exported geometry (default 1.0).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - format: ``"Wavefront Object"``
+        - output_path: path written
+        - exported_nodes: list of node labels included in the export
+        - node_count: number of exported nodes
+        - apply_current_pose, scale_factor: echoed settings
+
+    Examples:
+        daz_export_obj("C:/exports/hero_base.obj")
+        daz_export_obj("C:/exports/suit.obj", node_labels=["Sci-Fi Suit"])
+        daz_export_obj("C:/exports/hero_base.obj", scale_factor=0.01)
+
+    Notes:
+        OBJ does not support morph targets or animations.  Use ``daz_export_fbx``
+        when you need those features.  Raises ToolError if the OBJ exporter is
+        not installed.
+    """
+    return await _execute_by_id(
+        "vangard-export-scene",
+        {
+            "outputPath": output_path,
+            "nodeLabels": node_labels or [],
+            "format": "Wavefront Object",
+            "includeMorphs": False,
+            "applyCurrentPose": apply_current_pose,
+            "scaleFactor": scale_factor,
+        },
+    )
 
 
 def main() -> None:
