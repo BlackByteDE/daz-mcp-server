@@ -37,9 +37,11 @@ The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScr
 
 Before using this server, you need:
 
-1. **DAZ Studio 4.5+** installed and running
+1. **DAZ Studio** installed and running — compatible with:
+   - **DAZ Studio 4.5+** (legacy/classic versions)
+   - **DAZ Studio 6.25+** (current versions)
 2. **DazScriptServer plugin** installed, configured, and active
-   - Download from: https://github.com/bluemoonfoundry/daz-script-server
+   - Download the version matching your DAZ Studio installation from: https://github.com/bluemoonfoundry/daz-script-server
    - Plugin must be running on port 18811 (default)
    - Authentication must be configured (API token)
 3. **Python 3.11+** for running the MCP server
@@ -3092,8 +3094,8 @@ vangard-daz-mcp/
 
 ## Limitations
 
-- DAZ Studio must be running locally (no remote DAZ Studio support)
-- DazScriptServer plugin must be installed and active
+- DAZ Studio must be running locally (no remote DAZ Studio support); compatible with DAZ Studio 4.5+ and 6.25+
+- DazScriptServer plugin must be installed and active — ensure you install the version matching your DAZ Studio installation
 - All scene operations execute on DAZ Studio's main thread — operations are serialized even with async tools
 - While a render is running, no other scene operations can execute (scene is locked)
 - Scene checkpoints are in-memory only and lost if the MCP server restarts
