@@ -4,17 +4,25 @@ version = "0.4.0"
 description = "MCP server wrapping the DazScriptServer HTTP API for DAZ Studio"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Blue Moon Foundry", email = "gshirpara@gmail.com"},
+]
 dependencies = [
     "fastmcp>=2.0",
     "httpx>=0.27",
-    "dazpy",
+    "dazpy>=2.6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/bluemoonfoundry/daz-mcp-server"
+Repository = "https://github.com/bluemoonfoundry/daz-mcp-server"
+Documentation = "https://bluemoonfoundry.github.io/daz-script-server/"
+"Bug Tracker" = "https://github.com/bluemoonfoundry/daz-mcp-server/issues"
 
 [project.scripts]
 vangard-daz-mcp = "vangard_daz_mcp.server:main"
 
-[tool.uv.sources]
-dazpy = { path = "../daz-script-server", editable = true }
 
 [build-system]
 requires = ["hatchling"]
