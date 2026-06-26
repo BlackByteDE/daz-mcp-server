@@ -18,4 +18,16 @@ Use these for 5-10x speedup when changing 3+ items:
 
 ## Content Library
 - `daz_list_categories`, `daz_browse_category`: Navigating `.duf` files.
-- `daz_load_file`: Merging content into the scene.
+- `daz_search_content`: Keyword search across the library.
+- `daz_load_file`, `daz_load_product`: Load by path or product name.
+- `daz_check_compatibility`: Verify an asset works with a given figure.
+
+## Materials
+- `daz_list_materials`, `daz_get_material`: Inspect surfaces on a node.
+- `daz_set_material_property`: Set a surface property (color, reflectivity, etc.).
+- `daz_apply_material_preset`, `daz_copy_material`: Apply presets or clone surfaces.
+
+## Scene Utilities
+- `daz_save_scene`, `daz_save_scene_copy`: Save current or copy scene.
+- `daz_get_selected_nodes`: Query current DAZ Studio selection.
+- `daz_delete_node`: Remove a node from the scene.

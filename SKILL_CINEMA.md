@@ -9,7 +9,10 @@ Tools for visual storytelling and rendering.
 
 ## Lighting
 - `daz_apply_lighting_preset`: `three-point`, `rembrandt`, `butterfly`, `split`.
-- Positions lights relative to subject's bounding box.
+- `daz_set_mood_lighting`: Atmospheric mood (`romantic`, `tense`, `hopeful`, `dramatic`).
+- `daz_apply_time_of_day`: Time simulation (`dawn`, `morning`, `noon`, `golden-hour`, `dusk`, `night`).
+- `daz_list_lights` / `daz_create_light`: Enumerate or create lights by type.
+- Lights positioned relative to subject's bounding box.
 
 ## Animation
 - `daz_set_keyframe`, `daz_set_frame_range`.

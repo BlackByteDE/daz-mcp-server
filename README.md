@@ -1,6 +1,6 @@
 # vangard-daz-mcp
 
-**Version 0.3.0** | MCP Server for DAZ Studio
+**Version 0.4.0** | MCP Server for DAZ Studio
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes DAZ Studio operations to Claude and other MCP clients. Built on [FastMCP](https://github.com/jlowin/fastmcp) and wraps the [DazScriptServer](https://github.com/bluemoonfoundry/daz-script-server) HTTP plugin.
 
@@ -111,23 +111,24 @@ Add this to your Claude Desktop config file:
 ```json
 {
   "mcpServers": {
-    "daz-studio": {
+    "vangard-daz-mcp": {
       "command": "uv",
       "args": [
-        "--directory",
-        "/absolute/path/to/vangard-daz-mcp",
         "run",
+        "--project",
+        "/absolute/path/to/vangard-daz-mcp",
         "vangard-daz-mcp"
       ],
       "env": {
-        "DAZ_TIMEOUT": "60.0"
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
       }
     }
   }
 }
 ```
 
-**Note:** Replace `/absolute/path/to/vangard-daz-mcp` with the actual path on your system.
+**Note:** Replace `/absolute/path/to/vangard-daz-mcp` with the actual path on your system (e.g. `Y:/working/BlueMoonFoundry/daz-mcp-server` on Windows). Use `--project` (not `--directory`) so `uv run` picks up the project's `.venv` where the editable `dazpy` dependency is installed.
 
 After saving the config, restart Claude Desktop. The DAZ Studio tools will appear in Claude's tool palette.
 
@@ -1684,6 +1685,27 @@ Read metadata from a `.duf` file without loading it.
 
 ---
 
+#### `daz_search_content`
+Search the content library by keyword.
+
+**Arguments:**
+- `query` (string): Search query
+- `max_results` (int, default `10`): Maximum results to return
+
+**Returns:** `{"results": [{"name": "...", "path": "...", "type": "..."}], "count": N}`
+
+---
+
+#### `daz_load_product`
+Load a product from the DAZ content library by product name.
+
+**Arguments:**
+- `product_name` (string): Product name to search for and load
+
+**Returns:** `{"success": true, "product": "...", "loaded": [...]}`
+
+---
+
 ### 🎬 Scene Composition / Cinematography
 
 #### `daz_apply_composition_rule`
@@ -2082,9 +2104,9 @@ result = daz_get_request_result(req["request_id"], wait=True, timeout_seconds=36
 
 ---
 
-### 🎬 Cinematic Director Workflow (Phase 4)
+### 🎬 Cinematic Director Workflow
 
-Phase 4 tools provide high-level cinematic automation for creating professional scenes quickly.
+The cinematic module (`tools/cinematic.py`) provides 22 high-level tools for professional scene creation. The tools below are a selection of the most commonly used ones; additional tools include `daz_animate_camera_movement`, `daz_create_camera_path`, `daz_create_character_path`, `daz_arrange_characters`, `daz_choreograph_action`, `daz_setup_shot_coverage`, `daz_create_camera_rig`, `daz_animate_light`, `daz_create_light_sequence`, `daz_plan_shot`, `daz_create_storyboard`, `daz_set_focus_point`, `daz_animate_focus_pull`, `daz_time_expression`, and `daz_sync_character_beats`.
 
 #### `daz_create_shot_sequence`
 Create multi-camera shot sequences for cinematic storytelling.
@@ -2338,6 +2360,225 @@ List all saved macros in the library.
 ```
 
 **Note:** Macros are session-only (lost when MCP server restarts).
+
+---
+
+### 🎨 Material Tools
+
+#### `daz_list_materials`
+List all materials (surfaces) on a node.
+
+**Arguments:**
+- `node_label` (string): Node display label or internal name
+
+**Returns:** `{"materials": [{"name": "Skin", "index": 0}, ...], "count": N}`
+
+---
+
+#### `daz_get_material`
+Get all properties of a single material on a node.
+
+**Arguments:**
+- `node_label` (string): Node display label
+- `material_name` (string): Material/surface name
+
+**Returns:** `{"node": "...", "material": "Skin", "properties": {"Diffuse Color": ..., "Glossy Reflectivity": ...}}`
+
+---
+
+#### `daz_set_material_property`
+Set a property on a material surface.
+
+**Arguments:**
+- `node_label` (string): Node display label
+- `material_name` (string): Material/surface name
+- `property_name` (string): Property name (e.g., "Diffuse Color", "Glossy Reflectivity")
+- `value`: New value (number, color string, or boolean)
+
+---
+
+#### `daz_apply_material_preset`
+Apply a material preset `.duf` file to a node.
+
+**Arguments:**
+- `node_label` (string): Node to apply preset to
+- `preset_path` (string): Absolute path to preset `.duf` file
+
+---
+
+#### `daz_copy_material`
+Copy a material from one node to another.
+
+**Arguments:**
+- `source_label` (string): Source node
+- `source_material` (string): Source material name
+- `target_label` (string): Target node
+- `target_material` (string, optional): Target material name (defaults to same as source)
+
+---
+
+### 👗 Wardrobe & dForce Tools
+
+#### `daz_list_fitted_items`
+List all clothing/hair items fitted to a figure.
+
+**Arguments:**
+- `figure_label` (string): Figure to inspect
+
+**Returns:** `{"figure": "...", "fittedItems": [{"label": "...", "type": "..."}], "count": N}`
+
+---
+
+#### `daz_fit_clothing`
+Fit a clothing item to a figure (auto-follow skeleton).
+
+**Arguments:**
+- `clothing_label` (string): Clothing node to fit
+- `figure_label` (string): Target figure
+
+---
+
+#### `daz_unfit_item`
+Unfit a clothing/hair item from its figure.
+
+**Arguments:**
+- `item_label` (string): Item to unfit
+
+---
+
+#### `daz_run_dforce_simulation`
+Run dForce cloth simulation on a node.
+
+**Arguments:**
+- `node_label` (string): Node to simulate (or `null` for all dForce items)
+- `start_frame` (int, optional): Start frame
+- `end_frame` (int, optional): End frame
+
+---
+
+#### `daz_bake_simulation`
+Bake dForce simulation results to static geometry.
+
+**Arguments:**
+- `node_label` (string, optional): Node to bake (or `null` for all)
+
+---
+
+#### `daz_set_dforce_property`
+Set a dForce simulation property on a node.
+
+**Arguments:**
+- `node_label` (string): Node with dForce modifier
+- `property_name` (string): dForce property name
+- `value` (float): New value
+
+---
+
+#### `daz_get_figure_info`
+Get detailed information about a figure (generation, fitted items, bone count).
+
+**Arguments:**
+- `figure_label` (string): Figure to inspect
+
+---
+
+#### `daz_set_subdivision`
+Set subdivision level on a node.
+
+**Arguments:**
+- `node_label` (string): Node to modify
+- `level` (int): Subdivision level (0=base, 1=one level, etc.)
+
+---
+
+#### `daz_export_fbx`
+Export a node (or full scene) to FBX format.
+
+**Arguments:**
+- `node_label` (string, optional): Node to export (or `null` for scene)
+- `output_path` (string): Absolute path for output `.fbx` file
+
+---
+
+#### `daz_export_obj`
+Export a node to OBJ format.
+
+**Arguments:**
+- `node_label` (string, optional): Node to export (or `null` for scene)
+- `output_path` (string): Absolute path for output `.obj` file
+
+---
+
+### 🌿 New Character & Lighting Tools (v0.4.0)
+
+#### `daz_set_body_language`
+Apply full-body posture language to a character (beyond facial expressions).
+
+**Arguments:**
+- `character_label` (string): Character to pose
+- `stance` (string): Body language archetype (e.g., `"confident"`, `"defeated"`, `"alert"`, `"relaxed"`)
+- `intensity` (float, default `0.7`): Intensity 0.0–1.0
+
+---
+
+#### `daz_direct_gaze`
+Control where a character's eyes are directed at the sub-expression level.
+
+**Arguments:**
+- `character_label` (string): Character
+- `direction` (string): Gaze direction (e.g., `"camera"`, `"up"`, `"down"`, `"left"`, `"right"`, `"away"`)
+- `intensity` (float, default `1.0`): Intensity 0.0–1.0
+
+---
+
+#### `daz_set_mood_lighting`
+Apply a mood-based lighting setup (emotional/atmospheric presets).
+
+**Arguments:**
+- `mood` (string): Lighting mood (e.g., `"romantic"`, `"tense"`, `"hopeful"`, `"melancholy"`, `"dramatic"`)
+- `subject_label` (string): Primary subject to light
+
+---
+
+#### `daz_apply_time_of_day`
+Configure scene lighting to simulate a time-of-day atmosphere.
+
+**Arguments:**
+- `time_of_day` (string): Time preset (e.g., `"dawn"`, `"morning"`, `"noon"`, `"golden-hour"`, `"dusk"`, `"night"`)
+- `subject_label` (string): Primary subject in the scene
+
+---
+
+#### `daz_auto_improve_scene`
+Automatically detect and fix common scene quality issues (lighting gaps, camera positioning, intersections).
+
+**Returns:** `{"improvements": [...], "score_before": N, "score_after": N}`
+
+---
+
+#### `daz_suggest_next_action`
+Suggest the next logical action based on current scene state.
+
+**Returns:** `{"suggestions": [{"action": "...", "reason": "...", "tool": "..."}]}`
+
+---
+
+#### `daz_get_performance_stats`
+Get MCP server performance metrics (request counts, latencies, tool call frequencies).
+
+---
+
+#### `daz_explain_last_error`
+Get a human-readable explanation of the last error with suggested fixes.
+
+---
+
+#### `daz_check_compatibility`
+Check if a content asset is compatible with a figure.
+
+**Arguments:**
+- `asset_path` (string): Absolute path to `.duf` asset
+- `figure_label` (string): Figure to check compatibility against
 
 ---
 
@@ -2624,7 +2865,7 @@ Execute a DazScript file from disk.
 
 ### 🚀 Script Registry
 High-level tools (`daz_scene_info`, `daz_get_node`, etc.) use the DazScriptServer script registry:
-- Scripts are registered once at startup
+- Scripts are registered once at startup via `_registry.py`
 - Subsequent calls execute by ID (no retransmission)
 - Auto-reregistration on 404 (when DAZ Studio restarts)
 
@@ -2637,14 +2878,18 @@ If DAZ Studio restarts and clears the session registry, the server automatically
 - Authentication failures → Token file location in error message
 - Script errors → Full error details with line numbers and captured output
 
-### 🎬 Cinematic Director Workflow (Phase 4 - NEW in v0.3.0)
-High-level automation tools for professional cinematic workflows:
+### 🏗️ Modular Architecture (v0.4.0)
+The server was refactored from a single 15,000-line `server.py` into 13 focused tool modules under `tools/`. A shared `_mcp.py` holds the `FastMCP` instance and all execute helpers, avoiding circular imports. Import-time side effects register all `@mcp.tool()` decorators when `tools/__init__.py` is imported.
+
+### 🎬 Cinematic Director Workflow
+22 high-level cinematic tools for professional scene creation:
 - **Scene Generation**: Create complete scenes from natural language (5 templates: dining, interview, portrait, conversation, generic)
 - **Shot Sequences**: Multi-camera cinematography (establishing shots, shot-reverse-shot, orbit, push-in)
+- **Camera Animation**: Dolly, push-in, orbit paths with keyframe control
 - **Conversation Choreography**: Automated dialogue animation with look-at behavior and emotion timing
+- **Lighting Animation**: Animated light sequences, mood lighting, time-of-day
+- **Shot Planning**: Storyboard creation, shot coverage, focus/DOF control
 - **Macro System**: Record and replay operation sequences for workflow automation (session-based)
-
-Phase 4 tools combine lower-level operations into powerful high-level workflows, dramatically reducing the time to create professional cinematic scenes.
 
 ---
 
@@ -2791,8 +3036,27 @@ uv run pytest tests/test_server.py::test_daz_status_ok -v
 ```
 vangard-daz-mcp/
 ├── src/vangard_daz_mcp/
-│   ├── server.py              # Single-file MCP server (all tools)
-│   └── dazscript_docs.json    # DazScript documentation loaded by daz_script_help
+│   ├── server.py              # Entry point: imports _mcp and tools package
+│   ├── _mcp.py                # Shared FastMCP instance, lifespan, execute helpers
+│   ├── _client.py             # httpx client singleton + env config
+│   ├── _errors.py             # Error handling helpers
+│   ├── _registry.py           # Script pre-registration at startup
+│   ├── dazscript_docs.json    # DazScript documentation (daz_script_help)
+│   └── tools/
+│       ├── __init__.py        # Imports all 13 modules (registers @mcp.tool decorators)
+│       ├── spatial.py         # World position, bounding box, distance, layout (7 tools)
+│       ├── transform.py       # Node properties, batch ops, visibility, selection (7 tools)
+│       ├── scene.py           # Load/save, hierarchy, checkpoints (11 tools)
+│       ├── figure.py          # Posing, look-at, IK, interaction, pose library (7 tools)
+│       ├── morph.py           # Morphs, emotions, body language, gaze (6 tools)
+│       ├── camera_light.py    # Cameras, lights, presets, mood/time-of-day (15 tools)
+│       ├── render.py          # Sync/async render, batch, animation export (16 tools)
+│       ├── animation.py       # Keyframes, timeline, frame range (7 tools)
+│       ├── material.py        # Materials: list, get, set, presets, copy (5 tools)
+│       ├── utility.py         # Status, execute, docs, validate, macros (18 tools)
+│       ├── content.py         # Content browser, search, compatibility (6 tools)
+│       ├── cinematic.py       # Shot sequences, camera paths, storyboard (22 tools)
+│       └── wardrobe.py        # Clothing, dForce, subdivision, export (10 tools)
 ├── tests/
 │   └── test_server.py         # Test suite with respx mocks
 ├── pyproject.toml             # Project config (version, dependencies)
@@ -2803,11 +3067,12 @@ vangard-daz-mcp/
 
 ### Architecture
 
-- **FastMCP 3.x server** with stdio transport
-- **httpx.AsyncClient** for HTTP requests to DazScriptServer
-- **Script registry** for high-level tools (auto-registration on startup)
-- **Module-level `_http_client`** shared across all tool calls
-- **lifespan context** manages client initialization and cleanup
+- **FastMCP 3.x server** with stdio transport (137 tools registered)
+- **Modular tool package**: 13 focused modules under `tools/`; `@mcp.tool()` decorators fire at import time via the shared `mcp` instance from `_mcp.py`, avoiding circular imports with `server.py`
+- **httpx.AsyncClient** for HTTP requests to DazScriptServer; managed in `_client.py` singleton
+- **dazpy SDK** (editable dep from `../daz-script-server`): synchronous Python SDK; all dazpy calls wrapped in `asyncio.to_thread` via `run_dazpy()`
+- **Script registry** (`_registry.py`): high-level tool scripts pre-registered at startup, executed by ID; auto-re-registered on 404 when DAZ Studio restarts
+- **lifespan context** manages httpx client initialization and cleanup
 
 ---
 
@@ -2817,6 +3082,7 @@ vangard-daz-mcp/
 - **Dependencies:**
   - `fastmcp>=2.0` - MCP server framework
   - `httpx>=0.27` - Async HTTP client
+  - `dazpy` - Synchronous Python SDK for DazScriptServer (editable install from `../daz-script-server`)
 - **Dev Dependencies:**
   - `pytest>=8.0`
   - `pytest-asyncio>=0.24`
