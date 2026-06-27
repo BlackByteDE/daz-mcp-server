@@ -1,6 +1,6 @@
 # vangard-daz-mcp
 
-**Version 0.2.0** | MCP Server for DAZ Studio
+**Version 0.4.0** | MCP Server for DAZ Studio
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes DAZ Studio operations to Claude and other MCP clients. Built on [FastMCP](https://github.com/jlowin/fastmcp) and wraps the [DazScriptServer](https://github.com/bluemoonfoundry/daz-script-server) HTTP plugin.
 
@@ -22,10 +22,14 @@ This MCP server allows Claude (via Claude Desktop or other MCP clients) to contr
 - Apply professional lighting presets and cinematography composition rules
 - Browse and query the DAZ content library
 - Save and restore named scene checkpoints
+- **Generate complete scenes from natural language descriptions**
+- **Create multi-camera shot sequences (orbit, push-in, shot-reverse-shot)**
+- **Choreograph animated conversations with dialogue beats**
+- **Record and replay operation macros for workflow automation**
 - Execute arbitrary DazScript code
 - Access comprehensive DazScript documentation and examples
 
-The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScriptServer plugin** ↔ **DAZ Studio**
+The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScriptServer plugin** ↔ **DAZ Studio 4.5+ or 6.25+**
 
 ---
 
@@ -33,11 +37,14 @@ The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScr
 
 Before using this server, you need:
 
-1. **DAZ Studio 4.5+** installed and running
-2. **DazScriptServer plugin** installed, configured, and active
+1. **DAZ Studio** installed and running — compatible with:
+   - **DAZ Studio 4.5+** (legacy/classic versions)
+   - **DAZ Studio 6.25+** (current versions)
+2. **DazScriptServer plugin** — must match your DAZ Studio version:
    - Download from: https://github.com/bluemoonfoundry/daz-script-server
+   - Install the **DS4 build** for DAZ Studio 4.x, or the **DS6 build** for DAZ Studio 6.x
    - Plugin must be running on port 18811 (default)
-   - Authentication must be configured (API token)
+   - Authentication must be configured (API token auto-generated on first run)
 3. **Python 3.11+** for running the MCP server
 4. **uv** package manager (recommended) or pip
 
@@ -45,24 +52,40 @@ Before using this server, you need:
 
 ## Installation
 
-### Using uv (Recommended)
+### 1. Install uv (if you don't have it)
+
+**macOS / Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+See [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/) for other options.
+
+### 2. Clone and install
 
 ```bash
 # Clone the repository
-git clone https://github.com/bluemoonfoundry/vangard-daz-mcp.git
-cd vangard-daz-mcp
+git clone https://github.com/bluemoonfoundry/daz-mcp-server.git
+cd daz-mcp-server
 
-# Install dependencies
+# Install dependencies (creates .venv automatically)
 uv sync
 
-# Run the server
-uv run vangard-daz-mcp
+# Verify it works
+uv run vangard-daz-mcp --help
 ```
 
-### Using pip
+### Using pip (alternative)
 
 ```bash
-# Install from source
+git clone https://github.com/bluemoonfoundry/daz-mcp-server.git
+cd daz-mcp-server
+
 pip install .
 
 # Run the server
@@ -83,6 +106,7 @@ Configure the server via environment variables:
 | `DAZ_PORT` | `18811` | DazScriptServer port |
 | `DAZ_TIMEOUT` | `30.0` | Request timeout in seconds (increase for long renders) |
 | `DAZ_API_TOKEN` | *(from file)* | API token for authentication |
+| `DAZ_CONTENT_BROWSER_URL` | `http://localhost:8080` | Content browser API URL (if using a separate content service) |
 
 ### Authentication
 
@@ -97,35 +121,180 @@ export DAZ_API_TOKEN="your-token-here"
 
 ---
 
-## Claude Desktop Configuration
+## MCP Client Configuration
 
-Add this to your Claude Desktop config file:
+### Claude Desktop
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Config file location:
 
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+**macOS / Linux:**
 ```json
 {
   "mcpServers": {
-    "daz-studio": {
+    "vangard-daz-mcp": {
       "command": "uv",
       "args": [
-        "--directory",
-        "/absolute/path/to/vangard-daz-mcp",
         "run",
+        "--project",
+        "/absolute/path/to/daz-mcp-server",
         "vangard-daz-mcp"
       ],
       "env": {
-        "DAZ_TIMEOUT": "60.0"
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
       }
     }
   }
 }
 ```
 
-**Note:** Replace `/absolute/path/to/vangard-daz-mcp` with the actual path on your system.
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "vangard-daz-mcp": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "C:\\Users\\YourName\\daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
 
-After saving the config, restart Claude Desktop. The DAZ Studio tools will appear in Claude's tool palette.
+Replace the path with the actual location where you cloned the repo. Use `--project` (not `--directory`) so `uv run` picks up the project's `.venv`.
+
+After saving the config, **restart Claude Desktop**. The DAZ Studio tools will appear in Claude's tool palette.
+
+---
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project, or `~/.cursor/mcp.json` for global access:
+
+```json
+{
+  "mcpServers": {
+    "vangard-daz-mcp": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
+
+---
+
+### VS Code (GitHub Copilot / MCP extension)
+
+Add to `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "vangard-daz-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
+
+---
+
+### Verifying the connection
+
+After configuration, ask your MCP client:
+
+```
+Check if DAZ Studio is running
+```
+
+Claude will call `daz_status`. A successful response looks like:
+
+```json
+{ "running": true, "version": "1.3.0" }
+```
+
+If it fails, see the [Troubleshooting](#troubleshooting) section below.
+
+---
+
+## Domain Reference Files (SKILL files)
+
+The repository ships six **SKILL files** — curated knowledge documents that you can ask Claude (or any MCP client) to read before working in a particular area of DAZ Studio. They exist because LLMs have reasonable general knowledge about 3D software but will make confident, wrong assumptions about DAZ Studio specifics — inverted rotation signs, broken API methods, generation-specific bone names, and so on. Loading the right SKILL file before a task corrects those assumptions and produces dramatically better results.
+
+### How to use them
+
+Ask Claude to read the relevant file at the start of a session or task:
+
+```
+Read the file SKILL_DAZ_STUDIO.md before we begin.
+```
+
+```
+Before writing any DazScript code, read SKILL_DAZSCRIPT.md.
+```
+
+You can load more than one if your task spans domains:
+
+```
+Read SKILL_DAZ_STUDIO.md and SKILL_CINEMA.md — we're going to set up a portrait shot.
+```
+
+---
+
+### SKILL file reference
+
+| File | Domain | Load when… |
+|------|--------|------------|
+| [`SKILL_DAZ_STUDIO.md`](SKILL_DAZ_STUDIO.md) | DAZ Studio conventions | Starting any session — covers coordinate system inversions, camera Y-rotation being backwards, bone rotation limits, and known tool limitations |
+| [`SKILL_DAZSCRIPT.md`](SKILL_DAZSCRIPT.md) | DazScript API | Writing or debugging custom scripts via `daz_execute` — documents verified-working API patterns and a list of broken/wrong methods to avoid |
+| [`SKILL_SCENE.md`](SKILL_SCENE.md) | Scene management | Working with scene hierarchy, content library, spatial layout, materials, or batch operations |
+| [`SKILL_ACTORS.md`](SKILL_ACTORS.md) | Characters & posing | Working with morphs, emotions, body language, gaze direction, wardrobe, or multi-character interactions |
+| [`SKILL_CINEMA.md`](SKILL_CINEMA.md) | Cameras, lighting & rendering | Composing shots, setting up lighting rigs, animating cameras, or running renders |
+| [`SKILL_DEVELOPMENT.md`](SKILL_DEVELOPMENT.md) | MCP server internals | Modifying or extending the MCP server itself — module layout, how to add tools, the script registry |
+
+---
+
+### When to load `SKILL_DAZ_STUDIO.md`
+
+This is the most important file and the one most likely to save you from a frustrating session. Key things it corrects:
+
+- **Camera Y rotation is inverted** — positive values turn the camera *left*, not right. Every other 3D application does this the other way.
+- **`daz_look_at_point` applies rotations in the wrong direction** — always verify in the viewport and correct manually.
+- **`daz_orbit_camera_around` aims at the figure's root (feet), not the face** — use explicit world-space coordinates for portrait work instead.
+- **Genesis 9 faces +Z by default** — "in front of" a character is at a positive Z coordinate.
+- **Focal distance requires true 3D distance** — using Z distance alone throws portrait shots out of focus.
 
 ---
 
@@ -240,6 +409,24 @@ Read all numeric properties of a node by its label or internal name.
 ```
 
 **Use when:** You need to read transforms, morphs, or other numeric properties on a node.
+
+---
+
+#### `daz_get_selected_nodes`
+Return the nodes currently selected in the DAZ Studio viewport.
+
+**Returns:**
+```json
+{
+  "count": 2,
+  "nodes": [
+    {"label": "Genesis 9", "name": "Genesis9"},
+    {"label": "Camera 1", "name": "Camera"}
+  ]
+}
+```
+
+**Use when:** The user has manually selected items in DAZ Studio and wants the AI to act on that selection.
 
 ---
 
@@ -875,6 +1062,52 @@ for cam in ["Camera 1", "Camera 2", "Camera 3"]:
 ```
 
 **Note:** Preset can be applied to any camera, not just the original. Useful for synchronizing multiple cameras.
+
+---
+
+#### `daz_list_cameras`
+List all cameras currently in the scene.
+
+**Returns:**
+```json
+{
+  "camera_count": 2,
+  "cameras": [
+    {"name": "Camera", "label": "Camera 1", "focal_length": 65.0},
+    {"name": "Camera2", "label": "Wide Shot", "focal_length": 35.0}
+  ]
+}
+```
+
+**Use when:** Discovering what cameras exist before calling `daz_set_active_camera` or `daz_render_with_camera`.
+
+---
+
+#### `daz_create_camera`
+Create a new camera and add it to the scene.
+
+**Arguments:**
+- `label` (string): Display name for the new camera
+- `x`, `y`, `z` (float): World-space position in cm (defaults: 0, 150, 300)
+- `aim_at_label` (string, optional): Aim the camera at this node's centre
+- `focal_length` (float, optional): Lens focal length in mm
+
+**Returns:**
+```json
+{
+  "label": "Close-up Cam",
+  "position": {"x": 0, "y": 160, "z": 120},
+  "focal_length": 85.0
+}
+```
+
+**Example:**
+```
+daz_create_camera("Close-up Cam", x=0, y=160, z=120,
+                  aim_at_label="Genesis 9", focal_length=85)
+```
+
+**Note:** Use `daz_list_cameras` to confirm the camera was added, and `daz_set_active_camera` to switch the active viewport.
 
 ---
 
@@ -1567,6 +1800,115 @@ Validate scene quality for rendering — checks lighting, cameras, collisions.
 
 ---
 
+#### `daz_list_lights`
+List all lights currently in the scene.
+
+**Returns:**
+```json
+{
+  "light_count": 3,
+  "lights": [
+    {"name": "SpotLight", "label": "Key Light", "intensity": 10000, "shadow_type": "Raytraced"},
+    {"name": "DistantLight", "label": "Sun", "intensity": 5000, "shadow_type": "None"}
+  ]
+}
+```
+
+**Use when:** Checking what lights exist before modifying or deleting them.
+
+---
+
+#### `daz_create_light`
+Create a new light and add it to the scene.
+
+**Arguments:**
+- `light_type` (string): `"spot"`, `"distant"`, or `"point"`
+- `label` (string): Display name for the new light
+- `x`, `y`, `z` (float): World-space position in cm (defaults: 0, 200, 200)
+- `flux` (float, optional): Light intensity in DAZ flux units
+- `aim_at_label` (string, optional): Aim the light at this node's centre
+
+**Returns:**
+```json
+{
+  "label": "Key Light",
+  "type": "spot",
+  "position": {"x": 150, "y": 250, "z": 200},
+  "flux": 10000
+}
+```
+
+**Example:**
+```
+daz_create_light("spot", "Key Light", x=150, y=250, z=200,
+                 flux=10000, aim_at_label="Genesis 9")
+```
+
+**Note:** For complete multi-light setups use `daz_apply_lighting_preset` or `daz_apply_visual_style` instead.
+
+---
+
+#### `daz_set_scene_atmosphere`
+Configure the DAZ Studio environment node (HDRI dome, Sun-Sky, ambient lighting).
+
+**Arguments:**
+- `environment_mode` (int, optional): `0`=Sun-Sky Only, `1`=Dome Only, `2`=Sun-Sky+Dome, `3`=Scene Only (use `3` when relying on scene lights)
+- `environment_intensity` (float, optional): Brightness of dome/sun-sky (0.0–10.0)
+- `draw_dome` (bool, optional): Whether the HDRI image is visible as the background
+- `dome_rotation` (float, optional): Horizontal rotation of HDRI dome in degrees (0–360)
+- `sun_light_intensity` (float, optional): Sun component brightness in modes 0 or 2
+
+**Returns:**
+```json
+{
+  "changesApplied": ["environment_mode → 3"],
+  "changeCount": 1,
+  "currentEnvironmentMode": 3
+}
+```
+
+**Example:**
+```
+# Required before using lighting presets so dome doesn't wash out scene lights
+daz_set_scene_atmosphere(environment_mode=3)
+
+# Dimmed HDRI dome blended with scene lights
+daz_set_scene_atmosphere(environment_mode=1, environment_intensity=0.2, draw_dome=True)
+```
+
+---
+
+#### `daz_apply_visual_style`
+Apply a holistic cinematic visual style — creates/reconfigures three named lights (Style_Key, Style_Fill, Style_Rim) with ratios and angles tuned for the chosen look. Sets environment to Scene Only mode automatically.
+
+**Arguments:**
+- `style_name` (string): One of `"cinematic"`, `"noir"`, `"golden-hour"`, `"blue-hour"`, `"high-key"`, `"low-key"`, `"documentary"`, `"fantasy"`
+- `subject_label` (string, optional): Node to aim lights at
+- `intensity` (float, default `1.0`): Scale factor for all light flux (0.1–5.0)
+
+**Returns:**
+```json
+{
+  "styleName": "cinematic",
+  "lights": [
+    {"role": "key", "label": "Style_Key", "flux": 12000, "angle": 45},
+    {"role": "fill", "label": "Style_Fill", "flux": 3000, "angle": -45},
+    {"role": "rim", "label": "Style_Rim", "flux": 8000, "angle": 180}
+  ],
+  "lightingRatios": {"keyToFill": 4.0, "keyToRim": 1.5}
+}
+```
+
+**Example:**
+```
+daz_apply_visual_style("cinematic", subject_label="Genesis 9")
+daz_apply_visual_style("noir", subject_label="Alice", intensity=0.8)
+```
+
+**Note:** Fine-tune individual lights afterward with `daz_set_property("Style_Key", "Flux", 15000)`.
+
+---
+
 ### 🎭 Emotional Direction
 
 #### `daz_set_emotion`
@@ -1677,6 +2019,27 @@ Read metadata from a `.duf` file without loading it.
 ```
 
 **Use when:** Checking compatibility or requirements before loading content.
+
+---
+
+#### `daz_search_content`
+Search the content library by keyword.
+
+**Arguments:**
+- `query` (string): Search query
+- `max_results` (int, default `10`): Maximum results to return
+
+**Returns:** `{"results": [{"name": "...", "path": "...", "type": "..."}], "count": N}`
+
+---
+
+#### `daz_load_product`
+Load a product from the DAZ content library by product name.
+
+**Arguments:**
+- `product_name` (string): Product name to search for and load
+
+**Returns:** `{"success": true, "product": "...", "loaded": [...]}`
 
 ---
 
@@ -1843,6 +2206,72 @@ List all saved checkpoints in the current session.
   ],
   "count": 2
 }
+```
+
+---
+
+#### `daz_export_node_config`
+Export scene node properties to a portable JSON file for reuse across scenes or after server restarts. Complements in-memory checkpoints with persistent, file-based storage.
+
+**Arguments:**
+- `output_path` (string): Absolute path for the output `.json` file
+- `node_labels` (list, optional): Specific node labels to capture; if omitted captures all skeletons, cameras, and lights
+- `include_types` (list, optional): Property categories to capture: `"transforms"`, `"morphs"`, `"lights"`, `"cameras"` (default: all)
+
+**Returns:**
+```json
+{
+  "outputPath": "C:/shots/hero_pose.json",
+  "nodeCount": 3,
+  "propertyCount": 18,
+  "morphCount": 5,
+  "fileSizeBytes": 4096
+}
+```
+
+**Example:**
+```python
+# Export current pose and morphs for Genesis 9
+daz_export_node_config(
+    "C:/poses/alice_surprised.json",
+    node_labels=["Alice"],
+    include_types=["transforms", "morphs"]
+)
+
+# Export a camera rig for reuse in other scenes
+daz_export_node_config("C:/presets/interview_cameras.json",
+                        node_labels=["Camera A", "Camera B"],
+                        include_types=["transforms", "cameras"])
+```
+
+---
+
+#### `daz_import_node_config`
+Apply a previously exported node config file to the current scene. Nodes are matched by exact label.
+
+**Arguments:**
+- `input_path` (string): Absolute path to the `.json` config file
+- `node_labels` (list, optional): Subset of nodes to import from the file
+- `skip_missing` (bool, default `True`): Silently skip nodes that don't exist in the current scene
+- `scale_transforms` (float, default `1.0`): Scale factor for translation values (e.g. `0.01` to convert cm→m)
+
+**Returns:**
+```json
+{
+  "totalNodes": 2,
+  "successCount": 2,
+  "failureCount": 0,
+  "skippedCount": 0
+}
+```
+
+**Example:**
+```python
+# Restore a full scene setup
+daz_import_node_config("C:/shots/hero_pose.json")
+
+# Import only Alice's pose from a multi-character file
+daz_import_node_config("C:/shots/crowd.json", node_labels=["Alice"])
 ```
 
 ---
@@ -2058,6 +2487,37 @@ Set render quality preset before rendering.
 
 ---
 
+#### `daz_render_batch`
+Submit a batch of render variants atomically — all validated before any render is queued, each independently cancellable.
+
+**Arguments:**
+- `variants` (list): List of render specs. Each must include `output_path`. Optional per-variant overrides: `width`, `height`, `camera`, `engine`, `iray_samples`, `figure`/`figures`, `morphs`.
+- `base` (dict, optional): Default settings shared by all variants (overridden by matching keys in each variant).
+
+**Returns:**
+```json
+{
+  "request_ids": ["rnd-a1b2c3d4", "rnd-e5f6g7h8"],
+  "total": 2
+}
+```
+
+**Example — product photography with expression variants:**
+```python
+daz_render_batch(
+    base={"figure": "Genesis 9", "width": 1920, "height": 1080},
+    variants=[
+        {"output_path": "C:/out/neutral.png", "morphs": {"Smile": 0.0}},
+        {"output_path": "C:/out/smile.png",   "morphs": {"Smile": 1.0}},
+        {"output_path": "C:/out/serious.png", "morphs": {"Brow Down": 0.5}},
+    ]
+)
+```
+
+Use `daz_get_request_status` / `daz_get_request_result` to monitor each `request_id`. Up to 100 variants per call.
+
+---
+
 **Async workflow example:**
 
 ```python
@@ -2075,6 +2535,517 @@ while True:
 # 3. Or use wait=True in one step
 result = daz_get_request_result(req["request_id"], wait=True, timeout_seconds=3600)
 ```
+
+---
+
+#### `daz_wait_for_scene_event`
+Block until a specific DAZ Studio scene event fires, using a Server-Sent Events (SSE) stream.
+
+**Arguments:**
+- `event_types` (list[string]): One or more event types to wait for
+- `timeout_seconds` (int, default `30`): Max wait time before raising an error
+
+**Available event types:**
+`render.started`, `render.finished`, `render.progress`, `scene.loaded`, `scene.saved`, `node.added`, `node.removed`, `node.renamed`, `selection.primary_changed`, `time.changed`, `playback.started`, `playback.stopped`, `light.added`, `light.removed`, `camera.added`, `camera.removed`, `skeleton.added`, `skeleton.removed`
+
+**Returns:**
+```json
+{
+  "type": "render.finished",
+  "ts": "2026-01-01T12:00:05Z",
+  "data": {}
+}
+```
+
+**Example:**
+```python
+# Fire a render then block until it finishes
+daz_render_async("/renders/final.png")
+event = daz_wait_for_scene_event(["render.finished"], timeout_seconds=3600)
+
+# Wait for a scene load or save
+daz_wait_for_scene_event(["scene.loaded", "scene.saved"], timeout_seconds=60)
+```
+
+**Note:** Requires DazScriptServer to support the `GET /scene/events` SSE endpoint (available in DazScriptServer v2.5+).
+
+---
+
+### 🎬 Cinematic Director Workflow
+
+The cinematic module (`tools/cinematic.py`) provides 22 high-level tools for professional scene creation. The tools below are a selection of the most commonly used ones; additional tools include `daz_animate_camera_movement`, `daz_create_camera_path`, `daz_create_character_path`, `daz_arrange_characters`, `daz_choreograph_action`, `daz_setup_shot_coverage`, `daz_create_camera_rig`, `daz_animate_light`, `daz_create_light_sequence`, `daz_plan_shot`, `daz_create_storyboard`, `daz_set_focus_point`, `daz_animate_focus_pull`, `daz_time_expression`, and `daz_sync_character_beats`.
+
+#### `daz_create_shot_sequence`
+Create multi-camera shot sequences for cinematic storytelling.
+
+Automatically creates and positions multiple cameras with keyframe animations for standard cinematic sequences.
+
+**Arguments:**
+- `sequence_type` (string): Type of sequence - "establishing-medium-closeup", "shot-reverse-shot", "orbit", "push-in"
+- `characters` (list[string]): List of character labels (1-2 depending on sequence)
+- `duration` (int, default 120): Total duration in frames
+
+**Sequence Types:**
+- `"establishing-medium-closeup"` - Three cameras at different distances (wide → medium → close-up)
+- `"shot-reverse-shot"` - Two over-shoulder cameras for conversation (requires 2 characters)
+- `"orbit"` - Single animated camera orbiting 360° around subject
+- `"push-in"` - Single animated camera dollying from wide to close-up
+
+**Returns:**
+```json
+{
+  "cameras": [
+    {"label": "Wide Shot", "position": {...}, "frameRange": {"start": 0, "end": 59}},
+    {"label": "Medium Shot", "position": {...}, "frameRange": {"start": 60, "end": 119}}
+  ],
+  "totalFrames": 180,
+  "sequenceType": "establishing-medium-closeup",
+  "subject": "Genesis 9"
+}
+```
+
+**Example:**
+```python
+# Establishing sequence
+daz_create_shot_sequence("establishing-medium-closeup", ["Genesis 9"], duration=180)
+
+# Conversation cameras
+daz_create_shot_sequence("shot-reverse-shot", ["Alice", "Bob"], duration=240)
+
+# 360° turntable
+daz_create_shot_sequence("orbit", ["Genesis 9"], duration=300)
+```
+
+---
+
+#### `daz_animate_conversation`
+Choreograph animated conversation between two characters with look-at and emotion keyframes.
+
+**Arguments:**
+- `char1_label` (string): First character label
+- `char2_label` (string): Second character label
+- `dialogue_beats` (list[dict]): List of dialogue beats, each containing:
+  - `speaker` (string): Who's speaking (char1 or char2)
+  - `startFrame` (int): Beat start frame
+  - `endFrame` (int): Beat end frame
+  - `emotion` (string): Emotion name - "happy", "sad", "angry", "surprised", "neutral"
+  - `intensity` (float, optional): Emotion intensity 0.0-1.0 (default: 0.7)
+
+**Returns:**
+```json
+{
+  "char1": "Alice",
+  "char2": "Bob",
+  "beatsApplied": [
+    {
+      "beat": 1,
+      "speaker": "Alice",
+      "frameRange": {"start": 0, "end": 60},
+      "emotion": "happy",
+      "actions": ["Applied happy emotion (3 morphs)", "Listener looks at speaker"]
+    }
+  ],
+  "totalFrames": 180,
+  "beatCount": 3
+}
+```
+
+**Example:**
+```python
+daz_animate_conversation(
+    "Alice",
+    "Bob",
+    [
+        {"speaker": "Alice", "startFrame": 0, "endFrame": 60, "emotion": "happy"},
+        {"speaker": "Bob", "startFrame": 60, "endFrame": 120, "emotion": "surprised"},
+        {"speaker": "Alice", "startFrame": 120, "endFrame": 180, "emotion": "neutral"}
+    ]
+)
+```
+
+**Features:**
+- Listener automatically looks at speaker during dialogue beat
+- Emotion morphs applied at beat start
+- Head/neck rotation for natural look-at behavior
+- Compatible with shot-reverse-shot camera sequences
+
+---
+
+#### `daz_create_scene`
+Generate complete scene from natural language description.
+
+Automatically creates lighting, cameras, and character positioning based on text description using template-based keyword matching.
+
+**Arguments:**
+- `description` (string): Natural language scene description
+- `characters` (list[string], optional): Character labels already in scene
+
+**Supported Scene Types:**
+- **"dining" / "dinner" / "meal"** - Dining scene with characters facing across table
+- **"interview" / "meeting" / "business"** - Interview setup with professional lighting
+- **"portrait" / "headshot" / "photo"** - Portrait photography with three-point lighting
+- **"conversation" / "talking" / "chat"** - Conversation scene with shot-reverse-shot cameras
+- **Generic** - Default three-point lighting for unrecognized descriptions
+
+**Returns:**
+```json
+{
+  "sceneType": "dining",
+  "description": "romantic dinner for two",
+  "charactersUsed": 2,
+  "actions": [
+    "Scene type: Dining/meal scene",
+    "Positioned characters facing each other across table distance",
+    "Applied warm romantic lighting"
+  ],
+  "cameras": [
+    {"label": "Wide Shot", "type": "wide", "purpose": "Establishing shot of dining scene"},
+    {"label": "Over Shoulder 1", "type": "over-shoulder", "purpose": "Conversation angle"}
+  ],
+  "suggestions": [
+    "Add table prop for dining scene",
+    "Add plates, glasses, or food props for realism",
+    "Consider adding candles for romantic dinner mood"
+  ]
+}
+```
+
+**Example:**
+```python
+# Romantic dinner
+daz_create_scene("romantic dinner for two", ["Alice", "Bob"])
+
+# Job interview
+daz_create_scene("job interview", ["Interviewer", "Candidate"])
+
+# Professional portrait
+daz_create_scene("professional portrait", ["Genesis 9"])
+```
+
+**What Gets Created:**
+1. Scene-appropriate lighting (2-3 spot lights)
+2. Character positioning based on scene type
+3. Multiple cameras at strategic angles
+4. Environment mode set to Scene Only
+5. Actionable suggestions for enhancement
+
+---
+
+#### `daz_start_recording`
+Start recording a macro to capture sequence of operations.
+
+**Arguments:**
+- `macro_name` (string): Unique macro name (1-64 chars, letters/digits/hyphens/underscores)
+- `description` (string, optional): Macro description
+
+**Returns:**
+```json
+{
+  "success": true,
+  "macro_name": "portrait_setup",
+  "description": "Standard portrait lighting and framing",
+  "started_at": "2026-04-10T15:30:00",
+  "message": "Recording macro 'portrait_setup'. Call daz_stop_recording() when done."
+}
+```
+
+**Example:**
+```python
+# Start recording
+daz_start_recording("portrait_setup", "Standard portrait workflow")
+
+# Perform operations (these will be recorded)
+daz_apply_lighting_preset("three-point", "Genesis 9")
+daz_frame_shot("Camera 1", "Genesis 9", "medium-close-up")
+
+# Stop and save
+daz_stop_recording()
+```
+
+---
+
+#### `daz_stop_recording`
+Stop recording current macro and save to library.
+
+**Returns:**
+```json
+{
+  "success": true,
+  "macro_name": "portrait_setup",
+  "operation_count": 2,
+  "saved_at": "2026-04-10T15:31:00",
+  "message": "Macro 'portrait_setup' saved with 2 operations."
+}
+```
+
+---
+
+#### `daz_replay_macro`
+Replay a saved macro with optional parameter substitution.
+
+**Arguments:**
+- `macro_name` (string): Name of macro to replay
+- `parameters` (dict, optional): Parameter values for substitution
+
+**Returns:**
+```json
+{
+  "success": true,
+  "macro_name": "portrait_setup",
+  "results": [],
+  "successful_count": 2,
+  "failed_count": 0
+}
+```
+
+**Example:**
+```python
+# Replay for different character
+daz_replay_macro("portrait_setup", parameters={"subject": "Alice"})
+```
+
+**Note:** Parameter substitution not yet implemented in Phase 1 - placeholder for future.
+
+---
+
+#### `daz_list_macros`
+List all saved macros in the library.
+
+**Returns:**
+```json
+{
+  "macros": [
+    {
+      "name": "portrait_setup",
+      "description": "Standard portrait workflow",
+      "operation_count": 2,
+      "saved_at": "2026-04-10T15:31:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Note:** Macros are session-only (lost when MCP server restarts).
+
+---
+
+### 🎨 Material Tools
+
+#### `daz_list_materials`
+List all materials (surfaces) on a node.
+
+**Arguments:**
+- `node_label` (string): Node display label or internal name
+
+**Returns:** `{"materials": [{"name": "Skin", "index": 0}, ...], "count": N}`
+
+---
+
+#### `daz_get_material`
+Get all properties of a single material on a node.
+
+**Arguments:**
+- `node_label` (string): Node display label
+- `material_name` (string): Material/surface name
+
+**Returns:** `{"node": "...", "material": "Skin", "properties": {"Diffuse Color": ..., "Glossy Reflectivity": ...}}`
+
+---
+
+#### `daz_set_material_property`
+Set a property on a material surface.
+
+**Arguments:**
+- `node_label` (string): Node display label
+- `material_name` (string): Material/surface name
+- `property_name` (string): Property name (e.g., "Diffuse Color", "Glossy Reflectivity")
+- `value`: New value (number, color string, or boolean)
+
+---
+
+#### `daz_apply_material_preset`
+Apply a material preset `.duf` file to a node.
+
+**Arguments:**
+- `node_label` (string): Node to apply preset to
+- `preset_path` (string): Absolute path to preset `.duf` file
+
+---
+
+#### `daz_copy_material`
+Copy a material from one node to another.
+
+**Arguments:**
+- `source_label` (string): Source node
+- `source_material` (string): Source material name
+- `target_label` (string): Target node
+- `target_material` (string, optional): Target material name (defaults to same as source)
+
+---
+
+### 👗 Wardrobe & dForce Tools
+
+#### `daz_list_fitted_items`
+List all clothing/hair items fitted to a figure.
+
+**Arguments:**
+- `figure_label` (string): Figure to inspect
+
+**Returns:** `{"figure": "...", "fittedItems": [{"label": "...", "type": "..."}], "count": N}`
+
+---
+
+#### `daz_fit_clothing`
+Fit a clothing item to a figure (auto-follow skeleton).
+
+**Arguments:**
+- `clothing_label` (string): Clothing node to fit
+- `figure_label` (string): Target figure
+
+---
+
+#### `daz_unfit_item`
+Unfit a clothing/hair item from its figure.
+
+**Arguments:**
+- `item_label` (string): Item to unfit
+
+---
+
+#### `daz_run_dforce_simulation`
+Run dForce cloth simulation on a node.
+
+**Arguments:**
+- `node_label` (string): Node to simulate (or `null` for all dForce items)
+- `start_frame` (int, optional): Start frame
+- `end_frame` (int, optional): End frame
+
+---
+
+#### `daz_bake_simulation`
+Bake dForce simulation results to static geometry.
+
+**Arguments:**
+- `node_label` (string, optional): Node to bake (or `null` for all)
+
+---
+
+#### `daz_set_dforce_property`
+Set a dForce simulation property on a node.
+
+**Arguments:**
+- `node_label` (string): Node with dForce modifier
+- `property_name` (string): dForce property name
+- `value` (float): New value
+
+---
+
+#### `daz_get_figure_info`
+Get detailed information about a figure (generation, fitted items, bone count).
+
+**Arguments:**
+- `figure_label` (string): Figure to inspect
+
+---
+
+#### `daz_set_subdivision`
+Set subdivision level on a node.
+
+**Arguments:**
+- `node_label` (string): Node to modify
+- `level` (int): Subdivision level (0=base, 1=one level, etc.)
+
+---
+
+#### `daz_export_fbx`
+Export a node (or full scene) to FBX format.
+
+**Arguments:**
+- `node_label` (string, optional): Node to export (or `null` for scene)
+- `output_path` (string): Absolute path for output `.fbx` file
+
+---
+
+#### `daz_export_obj`
+Export a node to OBJ format.
+
+**Arguments:**
+- `node_label` (string, optional): Node to export (or `null` for scene)
+- `output_path` (string): Absolute path for output `.obj` file
+
+---
+
+### 🌿 New Character & Lighting Tools (v0.4.0)
+
+#### `daz_set_body_language`
+Apply full-body posture language to a character (beyond facial expressions).
+
+**Arguments:**
+- `character_label` (string): Character to pose
+- `stance` (string): Body language archetype (e.g., `"confident"`, `"defeated"`, `"alert"`, `"relaxed"`)
+- `intensity` (float, default `0.7`): Intensity 0.0–1.0
+
+---
+
+#### `daz_direct_gaze`
+Control where a character's eyes are directed at the sub-expression level.
+
+**Arguments:**
+- `character_label` (string): Character
+- `direction` (string): Gaze direction (e.g., `"camera"`, `"up"`, `"down"`, `"left"`, `"right"`, `"away"`)
+- `intensity` (float, default `1.0`): Intensity 0.0–1.0
+
+---
+
+#### `daz_set_mood_lighting`
+Apply a mood-based lighting setup (emotional/atmospheric presets).
+
+**Arguments:**
+- `mood` (string): Lighting mood (e.g., `"romantic"`, `"tense"`, `"hopeful"`, `"melancholy"`, `"dramatic"`)
+- `subject_label` (string): Primary subject to light
+
+---
+
+#### `daz_apply_time_of_day`
+Configure scene lighting to simulate a time-of-day atmosphere.
+
+**Arguments:**
+- `time_of_day` (string): Time preset (e.g., `"dawn"`, `"morning"`, `"noon"`, `"golden-hour"`, `"dusk"`, `"night"`)
+- `subject_label` (string): Primary subject in the scene
+
+---
+
+#### `daz_auto_improve_scene`
+Automatically detect and fix common scene quality issues (lighting gaps, camera positioning, intersections).
+
+**Returns:** `{"improvements": [...], "score_before": N, "score_after": N}`
+
+---
+
+#### `daz_suggest_next_action`
+Suggest the next logical action based on current scene state.
+
+**Returns:** `{"suggestions": [{"action": "...", "reason": "...", "tool": "..."}]}`
+
+---
+
+#### `daz_get_performance_stats`
+Get MCP server performance metrics (request counts, latencies, tool call frequencies).
+
+---
+
+#### `daz_explain_last_error`
+Get a human-readable explanation of the last error with suggested fixes.
+
+---
+
+#### `daz_check_compatibility`
+Check if a content asset is compatible with a figure.
+
+**Arguments:**
+- `asset_path` (string): Absolute path to `.duf` asset
+- `figure_label` (string): Figure to check compatibility against
 
 ---
 
@@ -2131,6 +3102,66 @@ Load a DAZ Studio file into the scene.
 **Example:**
 ```
 daz_load_file(file_path="/Library/Genesis 9/Character.duf", merge=True)
+```
+
+---
+
+#### `daz_save_scene`
+Save the current DAZ Studio scene to disk.
+
+**Arguments:**
+- `file_path` (string, optional): Absolute path for Save As. If omitted, saves to the scene's current filename (equivalent to Ctrl+S).
+
+**Returns:** `{"saved": true, "file_path": "/path/to/scene.duf"}`
+
+**Note:** If the scene has never been saved and no `file_path` is given, provide an explicit path to avoid DAZ opening a dialog.
+
+---
+
+#### `daz_save_scene_copy`
+Save a copy of the current scene to a new path **without** changing the scene's active filename.
+
+**Arguments:**
+- `path` (string): Absolute destination path
+
+**Returns:** `{"ok": true, "path": "/path/to/copy.duf", "source": "/path/to/original.duf", "method": "file-copy"}`
+
+**Example:**
+```
+daz_save_scene_copy("C:/backups/hero_v02.duf")
+```
+
+**Note:** Use this for backups and snapshots. Use `daz_save_scene` when you actually want to switch to a new file.
+
+---
+
+#### `daz_delete_node`
+Remove a node and its children from the scene.
+
+**Arguments:**
+- `node_label` (string): Display label or internal name of the node to delete
+
+**Returns:** `{"deleted": "Key Light", "child_count": 0}`
+
+**Note:** Destructive — cannot be undone without reloading from file. Save the scene first with `daz_save_scene` if you need a recovery point.
+
+---
+
+#### `daz_set_render_output`
+Configure render output path and/or image dimensions.
+
+**Arguments:**
+- `output_path` (string, optional): Absolute path for the rendered image (e.g. `"C:/renders/hero_shot.png"`)
+- `width` (int, optional): Render image width in pixels
+- `height` (int, optional): Render image height in pixels
+
+At least one argument must be provided.
+
+**Returns:** `{"changed": ["outputPath", "width", "height"], "current": {...}}`
+
+**Example:**
+```
+daz_set_render_output(output_path="C:/renders/scene01.png", width=1920, height=1080)
 ```
 
 ---
@@ -2310,6 +3341,57 @@ daz_interactive_pose("Bob", "Alice", "shoulder-arm")
 
 ---
 
+#### `daz_reset_pose`
+Zero all bone rotations on a figure, returning it to its rest pose.
+
+**Arguments:**
+- `node_label` (string): Figure to reset
+- `zero_transforms` (bool, default `False`): If True, also zero the root XYZ translation and reset Scale to 1.0
+
+**Returns:** `{"node": "Genesis 9", "bones_reset": 127, "transforms_zeroed": false}`
+
+**Note:** Does not affect morph values or animation keyframes.
+
+---
+
+#### `daz_save_pose`
+Capture all bone rotations from a figure and save to a portable JSON pose file.
+
+**Arguments:**
+- `figure_label` (string): Source figure
+- `pose_name` (string): Human-readable name stored in the file
+- `output_path` (string): Absolute path for the `.json` output file
+
+**Returns:** `{"success": true, "bone_count": 127, "file": "/path/to/pose.json"}`
+
+**Example:**
+```
+daz_save_pose("Genesis 9", "Hero Idle", "C:/poses/hero_idle.json")
+```
+
+---
+
+#### `daz_load_pose`
+Apply a saved pose file to a figure.
+
+**Arguments:**
+- `figure_label` (string): Target figure
+- `pose_path` (string): Absolute path to the `.json` pose file
+- `bone_group` (string, default `"full"`): Filter which bones to apply — `"full"`, `"arms_only"`, `"legs_only"`, or `"spine"`
+
+**Returns:** `{"success": true, "bones_applied": 127, "bones_skipped": 0}`
+
+**Example:**
+```
+# Apply full pose
+daz_load_pose("Genesis 9", "C:/poses/hero_idle.json")
+
+# Apply only the arms from a pose to a different character
+daz_load_pose("Alice", "C:/poses/reaching.json", bone_group="arms_only")
+```
+
+---
+
 ### 🔧 Low-Level Tools
 
 #### `daz_execute`
@@ -2361,7 +3443,7 @@ Execute a DazScript file from disk.
 
 ### 🚀 Script Registry
 High-level tools (`daz_scene_info`, `daz_get_node`, etc.) use the DazScriptServer script registry:
-- Scripts are registered once at startup
+- Scripts are registered once at startup via `_registry.py`
 - Subsequent calls execute by ID (no retransmission)
 - Auto-reregistration on 404 (when DAZ Studio restarts)
 
@@ -2373,6 +3455,19 @@ If DAZ Studio restarts and clears the session registry, the server automatically
 - Timeouts → Actionable guidance (increase `DAZ_TIMEOUT`)
 - Authentication failures → Token file location in error message
 - Script errors → Full error details with line numbers and captured output
+
+### 🏗️ Modular Architecture (v0.4.0)
+The server was refactored from a single 15,000-line `server.py` into 13 focused tool modules under `tools/`. A shared `_mcp.py` holds the `FastMCP` instance and all execute helpers, avoiding circular imports. Import-time side effects register all `@mcp.tool()` decorators when `tools/__init__.py` is imported.
+
+### 🎬 Cinematic Director Workflow
+22 high-level cinematic tools for professional scene creation:
+- **Scene Generation**: Create complete scenes from natural language (5 templates: dining, interview, portrait, conversation, generic)
+- **Shot Sequences**: Multi-camera cinematography (establishing shots, shot-reverse-shot, orbit, push-in)
+- **Camera Animation**: Dolly, push-in, orbit paths with keyframe control
+- **Conversation Choreography**: Automated dialogue animation with look-at behavior and emotion timing
+- **Lighting Animation**: Animated light sequences, mood lighting, time-of-day
+- **Shot Planning**: Storyboard creation, shot coverage, focus/DOF control
+- **Macro System**: Record and replay operation sequences for workflow automation (session-based)
 
 ---
 
@@ -2419,6 +3514,37 @@ Between each render, rotate the character 90 degrees.
 ```
 
 Claude will loop through, adjusting rotation and calling `daz_render` for each output.
+
+### Example 5: Generate Complete Scene (Phase 4)
+```
+Create a romantic dinner scene with Alice and Bob
+```
+
+Claude will:
+1. Call `daz_create_scene("romantic dinner for two", ["Alice", "Bob"])`
+   - Positions characters facing each other
+   - Creates warm romantic lighting (2 spot lights)
+   - Creates wide shot and over-shoulder cameras
+   - Returns suggestions: add table, plates, candles
+2. Report the created cameras and lighting setup
+3. Suggest next steps based on the suggestions
+
+### Example 6: Animated Conversation (Phase 4)
+```
+Create an animated conversation between Alice and Bob:
+- Alice speaks happily from frame 0-60
+- Bob responds with surprise from 60-120
+- Alice concludes neutrally from 120-180
+```
+
+Claude will:
+1. Call `daz_animate_conversation("Alice", "Bob", [...dialogue beats...])`
+   - Sets up look-at behavior (listener looks at speaker)
+   - Applies emotion morphs at beat boundaries
+   - Animates head/neck rotation for natural movement
+2. Call `daz_create_shot_sequence("shot-reverse-shot", ["Alice", "Bob"], 180)`
+   - Creates over-shoulder cameras for conversation
+3. Report the animation setup and suggest render workflow
 
 ---
 
@@ -2488,8 +3614,27 @@ uv run pytest tests/test_server.py::test_daz_status_ok -v
 ```
 vangard-daz-mcp/
 ├── src/vangard_daz_mcp/
-│   ├── server.py              # Single-file MCP server (all tools)
-│   └── dazscript_docs.json    # DazScript documentation loaded by daz_script_help
+│   ├── server.py              # Entry point: imports _mcp and tools package
+│   ├── _mcp.py                # Shared FastMCP instance, lifespan, execute helpers
+│   ├── _client.py             # httpx client singleton + env config
+│   ├── _errors.py             # Error handling helpers
+│   ├── _registry.py           # Script pre-registration at startup
+│   ├── dazscript_docs.json    # DazScript documentation (daz_script_help)
+│   └── tools/
+│       ├── __init__.py        # Imports all 13 modules (registers @mcp.tool decorators)
+│       ├── spatial.py         # World position, bounding box, distance, layout (7 tools)
+│       ├── transform.py       # Node properties, batch ops, visibility, selection (7 tools)
+│       ├── scene.py           # Load/save, hierarchy, checkpoints (11 tools)
+│       ├── figure.py          # Posing, look-at, IK, interaction, pose library (7 tools)
+│       ├── morph.py           # Morphs, emotions, body language, gaze (6 tools)
+│       ├── camera_light.py    # Cameras, lights, presets, mood/time-of-day (15 tools)
+│       ├── render.py          # Sync/async render, batch, animation export (16 tools)
+│       ├── animation.py       # Keyframes, timeline, frame range (7 tools)
+│       ├── material.py        # Materials: list, get, set, presets, copy (5 tools)
+│       ├── utility.py         # Status, execute, docs, validate, macros (18 tools)
+│       ├── content.py         # Content browser, search, compatibility (6 tools)
+│       ├── cinematic.py       # Shot sequences, camera paths, storyboard (22 tools)
+│       └── wardrobe.py        # Clothing, dForce, subdivision, export (10 tools)
 ├── tests/
 │   └── test_server.py         # Test suite with respx mocks
 ├── pyproject.toml             # Project config (version, dependencies)
@@ -2500,11 +3645,12 @@ vangard-daz-mcp/
 
 ### Architecture
 
-- **FastMCP 3.x server** with stdio transport
-- **httpx.AsyncClient** for HTTP requests to DazScriptServer
-- **Script registry** for high-level tools (auto-registration on startup)
-- **Module-level `_http_client`** shared across all tool calls
-- **lifespan context** manages client initialization and cleanup
+- **FastMCP 3.x server** with stdio transport (137 tools registered)
+- **Modular tool package**: 13 focused modules under `tools/`; `@mcp.tool()` decorators fire at import time via the shared `mcp` instance from `_mcp.py`, avoiding circular imports with `server.py`
+- **httpx.AsyncClient** for HTTP requests to DazScriptServer; managed in `_client.py` singleton
+- **dazpy SDK** (installed from PyPI as `dazpy>=2.6.0`): synchronous Python SDK; all dazpy calls wrapped in `asyncio.to_thread` via `run_dazpy()`
+- **Script registry** (`_registry.py`): high-level tool scripts pre-registered at startup, executed by ID; auto-re-registered on 404 when DAZ Studio restarts
+- **lifespan context** manages httpx client initialization and cleanup
 
 ---
 
@@ -2514,6 +3660,7 @@ vangard-daz-mcp/
 - **Dependencies:**
   - `fastmcp>=2.0` - MCP server framework
   - `httpx>=0.27` - Async HTTP client
+  - `dazpy>=2.6.0` - Synchronous Python SDK for DazScriptServer (installed from PyPI)
 - **Dev Dependencies:**
   - `pytest>=8.0`
   - `pytest-asyncio>=0.24`
@@ -2523,8 +3670,8 @@ vangard-daz-mcp/
 
 ## Limitations
 
-- DAZ Studio must be running locally (no remote DAZ Studio support)
-- DazScriptServer plugin must be installed and active
+- DAZ Studio must be running locally (no remote DAZ Studio support); compatible with DAZ Studio 4.5+ and 6.25+
+- DazScriptServer plugin must be installed and active — ensure you install the version matching your DAZ Studio installation
 - All scene operations execute on DAZ Studio's main thread — operations are serialized even with async tools
 - While a render is running, no other scene operations can execute (scene is locked)
 - Scene checkpoints are in-memory only and lost if the MCP server restarts
@@ -2548,11 +3695,11 @@ vangard-daz-mcp/
 
 Contributions welcome! Areas for improvement:
 
-- Material property tools (read/set surface colors, textures, shader settings)
 - Support for binary data (screenshot capture, returning rendered images directly)
 - Integration tests with a real DAZ Studio instance
 - More DazScript documentation topics in `dazscript_docs.json`
 - Additional lighting presets and emotion definitions
+- Remote DAZ Studio support (connect to DAZ Studio on a different machine)
 
 ---
 

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "daz_mcp_server",
+  "project_id": "fc36870b-25be-474d-9f61-8a60b807bcd1"
+}

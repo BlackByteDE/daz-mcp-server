@@ -21,6 +21,7 @@ from vangard_daz_mcp.server import (
     daz_render_async,
     daz_render_with_camera_async,
     daz_batch_render_cameras_async,
+    daz_render_batch,
     daz_render_animation_async,
     daz_get_request_status,
     daz_get_request_result,
@@ -28,6 +29,8 @@ from vangard_daz_mcp.server import (
     daz_list_requests,
     daz_set_render_quality,
     daz_wait_for_request,
+    daz_save_scene_copy,
+    daz_wait_for_scene_event,
 )
 
 
@@ -314,7 +317,7 @@ async def test_daz_load_file_not_found(mock_daz):
 # Phase 1.5: Async operations — helpers
 # ---------------------------------------------------------------------------
 
-def _async_submitted(request_id: str, script_id: str = "vangard-render") -> httpx.Response:
+def _async_submitted(request_id: str) -> httpx.Response:
     """Return a 202 Accepted response for an async submission."""
     return httpx.Response(
         202,
@@ -357,96 +360,136 @@ def _result_response(request_id: str, status: str = "completed", result=None, er
 
 
 # ---------------------------------------------------------------------------
-# daz_render_async
+# daz_render_async — now uses POST /render directly
 # ---------------------------------------------------------------------------
 
 async def test_daz_render_async_ok(mock_daz):
-    mock_daz.post("/scripts/vangard-render/async").mock(
-        return_value=_async_submitted("render-abc123")
-    )
-    result = await daz_render_async()
-    assert result["request_id"] == "render-abc123"
+    mock_daz.post("/render").mock(return_value=_async_submitted("rnd-abc123"))
+    result = await daz_render_async("C:/renders/out.png")
+    assert result["request_id"] == "rnd-abc123"
     assert result["status"] == "queued"
 
 
-async def test_daz_render_async_with_path(mock_daz):
-    mock_daz.post("/scripts/vangard-render/async").mock(
-        return_value=_async_submitted("render-def456")
+async def test_daz_render_async_with_all_params(mock_daz):
+    captured = {}
+
+    def capture(request):
+        captured.update(request.content and __import__("json").loads(request.content))
+        return _async_submitted("rnd-params")
+
+    mock_daz.post("/render").mock(side_effect=capture)
+    result = await daz_render_async(
+        "C:/out.png", width=1920, height=1080, camera="Camera 1",
+        engine="iray", iray_samples=500,
     )
-    result = await daz_render_async(output_path="C:/renders/out.png")
-    assert result["request_id"] == "render-def456"
-
-
-async def test_daz_render_async_retries_on_404(mock_daz):
-    call_count = 0
-
-    def side_effect(request):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(404, json={"error": "Script not found"})
-        return _async_submitted("render-retry")
-
-    mock_daz.post("/scripts/vangard-render/async").mock(side_effect=side_effect)
-    mock_daz.post("/scripts/register").mock(
-        return_value=httpx.Response(200, json={"success": True, "id": "x", "updated": False})
-    )
-
-    result = await daz_render_async()
-    assert result["request_id"] == "render-retry"
-    assert call_count == 2
+    assert result["request_id"] == "rnd-params"
+    assert captured["output_path"] == "C:/out.png"
+    assert captured["width"] == 1920
+    assert captured["height"] == 1080
+    assert captured["camera"] == "Camera 1"
+    assert captured["engine"] == "iray"
+    assert captured["iray_samples"] == 500
 
 
 async def test_daz_render_async_connect_error(mock_daz):
-    mock_daz.post("/scripts/vangard-render/async").mock(
-        side_effect=httpx.ConnectError("refused")
-    )
+    mock_daz.post("/render").mock(side_effect=httpx.ConnectError("refused"))
     with pytest.raises(ToolError, match="DAZ Studio is running"):
-        await daz_render_async()
+        await daz_render_async("C:/out.png")
 
 
 # ---------------------------------------------------------------------------
-# daz_render_with_camera_async
+# daz_render_with_camera_async — now uses POST /render with camera param
 # ---------------------------------------------------------------------------
 
 async def test_daz_render_with_camera_async_ok(mock_daz):
-    mock_daz.post("/scripts/vangard-render-with-camera/async").mock(
-        return_value=_async_submitted("render-cam-abc")
-    )
+    captured = {}
+
+    def capture(request):
+        captured.update(__import__("json").loads(request.content))
+        return _async_submitted("rnd-cam-abc")
+
+    mock_daz.post("/render").mock(side_effect=capture)
     result = await daz_render_with_camera_async("Camera 1", "C:/out.png")
-    assert result["request_id"] == "render-cam-abc"
-    assert result["status"] == "queued"
+    assert result["request_id"] == "rnd-cam-abc"
+    assert captured["camera"] == "Camera 1"
+    assert captured["output_path"] == "C:/out.png"
 
 
 # ---------------------------------------------------------------------------
-# daz_batch_render_cameras_async
+# daz_batch_render_cameras_async — now uses POST /render/batch
 # ---------------------------------------------------------------------------
 
 async def test_daz_batch_render_cameras_async_ok(mock_daz):
     cameras = ["Cam_0", "Cam_90", "Cam_180"]
-    call_count = 0
-
-    def side_effect(request):
-        nonlocal call_count
-        rid = f"render-batch-{call_count}"
-        call_count += 1
-        return _async_submitted(rid)
-
-    mock_daz.post("/scripts/vangard-render-with-camera/async").mock(side_effect=side_effect)
-
+    mock_daz.post("/render/batch").mock(
+        return_value=httpx.Response(
+            202,
+            json={"request_ids": ["rnd-0", "rnd-1", "rnd-2"], "total": 3},
+        )
+    )
     result = await daz_batch_render_cameras_async(cameras, "/renders/turntable", "angle")
     assert result["total"] == 3
     assert len(result["request_ids"]) == 3
     assert result["cameras"] == cameras
 
 
+async def test_daz_batch_render_cameras_async_passes_engine(mock_daz):
+    captured = {}
+
+    def capture(request):
+        captured.update(__import__("json").loads(request.content))
+        return httpx.Response(202, json={"request_ids": ["rnd-0"], "total": 1})
+
+    mock_daz.post("/render/batch").mock(side_effect=capture)
+    await daz_batch_render_cameras_async(["OnlyCam"], "/out", engine="3delight")
+    assert captured.get("base", {}).get("engine") == "3delight"
+
+
 async def test_daz_batch_render_cameras_async_single(mock_daz):
-    mock_daz.post("/scripts/vangard-render-with-camera/async").mock(
-        return_value=_async_submitted("render-single")
+    mock_daz.post("/render/batch").mock(
+        return_value=httpx.Response(202, json={"request_ids": ["rnd-single"], "total": 1})
     )
     result = await daz_batch_render_cameras_async(["OnlyCam"], "/out")
     assert result["total"] == 1
-    assert result["request_ids"][0] == "render-single"
+    assert result["request_ids"][0] == "rnd-single"
+
+
+# ---------------------------------------------------------------------------
+# daz_render_batch — new tool using POST /render/batch
+# ---------------------------------------------------------------------------
+
+async def test_daz_render_batch_ok(mock_daz):
+    mock_daz.post("/render/batch").mock(
+        return_value=httpx.Response(
+            202,
+            json={"request_ids": ["rnd-0", "rnd-1"], "total": 2},
+        )
+    )
+    result = await daz_render_batch(
+        variants=[
+            {"output_path": "C:/out/neutral.png"},
+            {"output_path": "C:/out/smile.png", "morphs": {"Smile": 1.0}},
+        ]
+    )
+    assert result["total"] == 2
+    assert result["request_ids"] == ["rnd-0", "rnd-1"]
+
+
+async def test_daz_render_batch_with_base(mock_daz):
+    captured = {}
+
+    def capture(request):
+        captured.update(__import__("json").loads(request.content))
+        return httpx.Response(202, json={"request_ids": ["rnd-0"], "total": 1})
+
+    mock_daz.post("/render/batch").mock(side_effect=capture)
+    await daz_render_batch(
+        base={"figure": "Genesis 9", "width": 1920, "height": 1080},
+        variants=[{"output_path": "C:/out/v1.png"}],
+    )
+    assert captured["base"]["figure"] == "Genesis 9"
+    assert captured["base"]["width"] == 1920
+    assert len(captured["variants"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -530,12 +573,13 @@ async def test_daz_get_request_result_failed_raises(mock_daz):
         await daz_get_request_result("render-abc")
 
 
-async def test_daz_get_request_result_cancelled_raises(mock_daz):
+async def test_daz_get_request_result_cancelled_returns(mock_daz):
+    """Cancelled is an intentional outcome, not an error — should return the status dict."""
     mock_daz.get("/requests/render-abc/result").mock(
         return_value=_result_response("render-abc", status="cancelled")
     )
-    with pytest.raises(ToolError, match="cancelled"):
-        await daz_get_request_result("render-abc")
+    result = await daz_get_request_result("render-abc")
+    assert result["status"] == "cancelled"
 
 
 async def test_daz_get_request_result_no_wait(mock_daz):
@@ -555,41 +599,56 @@ async def test_daz_get_request_result_not_found(mock_daz):
 
 
 # ---------------------------------------------------------------------------
-# daz_cancel_request
+# daz_cancel_request — routes rnd- to POST /render/:id/cancel, others to DELETE /requests/:id
 # ---------------------------------------------------------------------------
 
-async def test_daz_cancel_request_queued(mock_daz):
-    mock_daz.delete("/requests/render-abc").mock(
+async def test_daz_cancel_script_request(mock_daz):
+    """Script request IDs (script-*) use DELETE /requests/:id."""
+    mock_daz.delete("/requests/script-abc").mock(
         return_value=httpx.Response(
             200,
-            json={
-                "request_id": "render-abc",
-                "status": "cancelled",
-                "cancelled_at": "2026-04-08T12:00:05.000",
-            },
+            json={"request_id": "script-abc", "status": "cancelled", "cancelled_at": "2026-04-08T12:00:05.000"},
         )
     )
-    result = await daz_cancel_request("render-abc")
+    result = await daz_cancel_request("script-abc")
     assert result["status"] == "cancelled"
-    assert result["request_id"] == "render-abc"
+
+
+async def test_daz_cancel_render_request(mock_daz):
+    """Render request IDs (rnd-*) use POST /render/:id/cancel."""
+    mock_daz.post("/render/rnd-abc123/cancel").mock(
+        return_value=httpx.Response(
+            200,
+            json={"request_id": "rnd-abc123", "status": "cancelled", "cancelled_at": "2026-04-08T12:00:05.000"},
+        )
+    )
+    result = await daz_cancel_request("rnd-abc123")
+    assert result["status"] == "cancelled"
+    assert result["request_id"] == "rnd-abc123"
 
 
 async def test_daz_cancel_request_already_done(mock_daz):
-    mock_daz.delete("/requests/render-abc").mock(
-        return_value=httpx.Response(
-            409, json={"error": "Cannot cancel completed request"}
-        )
+    mock_daz.delete("/requests/script-done").mock(
+        return_value=httpx.Response(409, json={"error": "Cannot cancel completed request"})
     )
     with pytest.raises(httpx.HTTPStatusError, match="409"):
-        await daz_cancel_request("render-abc")
+        await daz_cancel_request("script-done")
 
 
 async def test_daz_cancel_request_not_found(mock_daz):
-    mock_daz.delete("/requests/missing").mock(
+    mock_daz.delete("/requests/script-missing").mock(
         return_value=httpx.Response(404, json={"error": "Request not found"})
     )
-    with pytest.raises(httpx.HTTPStatusError, match="404"):
-        await daz_cancel_request("missing")
+    with pytest.raises(ToolError, match="not found"):
+        await daz_cancel_request("script-missing")
+
+
+async def test_daz_cancel_render_not_found(mock_daz):
+    mock_daz.post("/render/rnd-missing/cancel").mock(
+        return_value=httpx.Response(404, json={"error": "Request not found"})
+    )
+    with pytest.raises(ToolError, match="not found"):
+        await daz_cancel_request("rnd-missing")
 
 
 # ---------------------------------------------------------------------------
@@ -736,11 +795,12 @@ async def test_daz_wait_for_request_failed(mock_daz):
 
 
 async def test_daz_wait_for_request_cancelled(mock_daz):
+    """Cancelled is an intentional outcome — wait should return the status dict immediately."""
     mock_daz.get("/requests/render-abc/status").mock(
         return_value=_status_response("render-abc", "cancelled")
     )
-    with pytest.raises(ToolError, match="cancelled"):
-        await daz_wait_for_request("render-abc", poll_interval_seconds=0.0)
+    result = await daz_wait_for_request("render-abc", poll_interval_seconds=0.0)
+    assert result["status"] == "cancelled"
 
 
 async def test_daz_wait_for_request_timeout(mock_daz):
@@ -754,3 +814,190 @@ async def test_daz_wait_for_request_timeout(mock_daz):
             poll_interval_seconds=0.0,
             timeout_seconds=0.0,
         )
+
+
+# ---------------------------------------------------------------------------
+# daz_save_scene_copy — uses POST /scene/save-copy directly (not script registry)
+# ---------------------------------------------------------------------------
+
+def _save_copy_response(path, source, method="file-copy"):
+    return httpx.Response(
+        200,
+        json={"ok": True, "path": path, "source": source, "method": method},
+    )
+
+
+async def test_daz_save_scene_copy_ok(mock_daz):
+    mock_daz.post("/scene/save-copy").mock(
+        return_value=_save_copy_response(
+            "C:/backups/hero_v02.duf",
+            "C:/scenes/hero.duf",
+            "file-copy",
+        )
+    )
+    result = await daz_save_scene_copy("C:/backups/hero_v02.duf")
+    assert result["ok"] is True
+    assert result["path"] == "C:/backups/hero_v02.duf"
+    assert result["source"] == "C:/scenes/hero.duf"
+    assert result["method"] == "file-copy"
+
+
+async def test_daz_save_scene_copy_sends_correct_body(mock_daz):
+    captured = {}
+
+    def capture(request):
+        captured.update(__import__("json").loads(request.content))
+        return _save_copy_response("C:/out/copy.duf", "C:/scenes/orig.duf", "file-copy")
+
+    mock_daz.post("/scene/save-copy").mock(side_effect=capture)
+    await daz_save_scene_copy("C:/out/copy.duf")
+    assert captured == {"path": "C:/out/copy.duf"}
+
+
+async def test_daz_save_scene_copy_dirty_scene(mock_daz):
+    mock_daz.post("/scene/save-copy").mock(
+        return_value=_save_copy_response(
+            "C:/backups/dirty.duf",
+            "C:/scenes/active.duf",
+            "save-restore",
+        )
+    )
+    result = await daz_save_scene_copy("C:/backups/dirty.duf")
+    assert result["method"] == "save-restore"
+
+
+async def test_daz_save_scene_copy_connect_error(mock_daz):
+    mock_daz.post("/scene/save-copy").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError, match="DAZ Studio is running"):
+        await daz_save_scene_copy("C:/backups/hero.duf")
+
+
+async def test_daz_save_scene_copy_does_not_use_script_registry(mock_daz):
+    """Verify the tool calls /scene/save-copy and never hits the script registry."""
+    registry_called = False
+
+    def fail_if_registry(request):
+        nonlocal registry_called
+        registry_called = True
+        return httpx.Response(200, json={})
+
+    mock_daz.post("/scripts/vangard-save-scene/execute").mock(side_effect=fail_if_registry)
+    mock_daz.post("/scene/save-copy").mock(
+        return_value=_save_copy_response("C:/out.duf", "C:/src.duf")
+    )
+    await daz_save_scene_copy("C:/out.duf")
+    assert not registry_called, "daz_save_scene_copy must not use the script registry"
+
+
+# ---------------------------------------------------------------------------
+# daz_wait_for_scene_event
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+def _sse_body(*events: dict) -> bytes:
+    """Build a minimal SSE body from a list of event dicts."""
+    lines = []
+    for event in events:
+        lines.append(f"data: {_json.dumps(event)}\n\n")
+    return "".join(lines).encode()
+
+
+async def test_daz_wait_for_scene_event_returns_matching_event(mock_daz):
+    event = {"type": "render.finished", "ts": "2026-01-01T00:00:00Z", "data": {"path": "/out.png"}}
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(event),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+    assert result["type"] == "render.finished"
+    assert result["data"]["path"] == "/out.png"
+
+
+async def test_daz_wait_for_scene_event_skips_non_matching_events(mock_daz):
+    """Events before the matching one should be skipped."""
+    events = [
+        {"type": "time.changed", "ts": "2026-01-01T00:00:00Z", "data": {}},
+        {"type": "scene.loaded", "ts": "2026-01-01T00:00:01Z", "data": {"file": "hero.duf"}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["scene.loaded"], timeout_seconds=5)
+    assert result["type"] == "scene.loaded"
+
+
+async def test_daz_wait_for_scene_event_multiple_types(mock_daz):
+    """Returns first event whose type is in the requested set."""
+    events = [
+        {"type": "node.added", "ts": "2026-01-01T00:00:00Z", "data": {}},
+        {"type": "render.started", "ts": "2026-01-01T00:00:01Z", "data": {}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    result = await daz_wait_for_scene_event(["render.started", "render.finished"], timeout_seconds=5)
+    assert result["type"] == "render.started"
+
+
+async def test_daz_wait_for_scene_event_stream_closed_without_match_raises(mock_daz):
+    """If the stream ends without a matching event, ToolError is raised."""
+    events = [
+        {"type": "time.changed", "ts": "2026-01-01T00:00:00Z", "data": {}},
+    ]
+    mock_daz.get("/scene/events").mock(
+        return_value=httpx.Response(
+            200,
+            content=_sse_body(*events),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    with pytest.raises(ToolError, match="SSE stream closed"):
+        await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_connect_error_raises(mock_daz):
+    mock_daz.get("/scene/events").mock(side_effect=httpx.ConnectError("refused"))
+    with pytest.raises(ToolError, match="DAZ Studio is running"):
+        await daz_wait_for_scene_event(["render.finished"], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_empty_event_types_raises(mock_daz):
+    with pytest.raises(ToolError, match="empty"):
+        await daz_wait_for_scene_event([], timeout_seconds=5)
+
+
+async def test_daz_wait_for_scene_event_filter_param_derived_from_categories(mock_daz):
+    """The ?filter query param should use category prefixes, not full event type names."""
+    event = {"type": "render.finished", "ts": "2026-01-01T00:00:00Z", "data": {}}
+
+    captured_params = {}
+
+    def capture_request(request):
+        captured_params["filter"] = request.url.params.get("filter", "")
+        return httpx.Response(
+            200,
+            content=_sse_body(event),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    mock_daz.get("/scene/events").mock(side_effect=capture_request)
+    await daz_wait_for_scene_event(["render.finished", "scene.loaded"], timeout_seconds=5)
+
+    # Filter should contain category prefixes, not full dotted names
+    filter_val = captured_params["filter"]
+    assert "render" in filter_val
+    assert "scene" in filter_val
+    assert "render.finished" not in filter_val
