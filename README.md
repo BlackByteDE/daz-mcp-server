@@ -29,7 +29,7 @@ This MCP server allows Claude (via Claude Desktop or other MCP clients) to contr
 - Execute arbitrary DazScript code
 - Access comprehensive DazScript documentation and examples
 
-The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScriptServer plugin** ↔ **DAZ Studio**
+The server acts as a bridge: **MCP Client** ↔ **vangard-daz-mcp** ↔ **DazScriptServer plugin** ↔ **DAZ Studio 4.5+ or 6.25+**
 
 ---
 
@@ -40,10 +40,11 @@ Before using this server, you need:
 1. **DAZ Studio** installed and running — compatible with:
    - **DAZ Studio 4.5+** (legacy/classic versions)
    - **DAZ Studio 6.25+** (current versions)
-2. **DazScriptServer plugin** installed, configured, and active
-   - Download the version matching your DAZ Studio installation from: https://github.com/bluemoonfoundry/daz-script-server
+2. **DazScriptServer plugin** — must match your DAZ Studio version:
+   - Download from: https://github.com/bluemoonfoundry/daz-script-server
+   - Install the **DS4 build** for DAZ Studio 4.x, or the **DS6 build** for DAZ Studio 6.x
    - Plugin must be running on port 18811 (default)
-   - Authentication must be configured (API token)
+   - Authentication must be configured (API token auto-generated on first run)
 3. **Python 3.11+** for running the MCP server
 4. **uv** package manager (recommended) or pip
 
