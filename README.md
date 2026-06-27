@@ -51,24 +51,40 @@ Before using this server, you need:
 
 ## Installation
 
-### Using uv (Recommended)
+### 1. Install uv (if you don't have it)
+
+**macOS / Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+See [uv installation docs](https://docs.astral.sh/uv/getting-started/installation/) for other options.
+
+### 2. Clone and install
 
 ```bash
 # Clone the repository
-git clone https://github.com/bluemoonfoundry/vangard-daz-mcp.git
-cd vangard-daz-mcp
+git clone https://github.com/bluemoonfoundry/daz-mcp-server.git
+cd daz-mcp-server
 
-# Install dependencies
+# Install dependencies (creates .venv automatically)
 uv sync
 
-# Run the server
-uv run vangard-daz-mcp
+# Verify it works
+uv run vangard-daz-mcp --help
 ```
 
-### Using pip
+### Using pip (alternative)
 
 ```bash
-# Install from source
+git clone https://github.com/bluemoonfoundry/daz-mcp-server.git
+cd daz-mcp-server
+
 pip install .
 
 # Run the server
@@ -89,6 +105,7 @@ Configure the server via environment variables:
 | `DAZ_PORT` | `18811` | DazScriptServer port |
 | `DAZ_TIMEOUT` | `30.0` | Request timeout in seconds (increase for long renders) |
 | `DAZ_API_TOKEN` | *(from file)* | API token for authentication |
+| `DAZ_CONTENT_BROWSER_URL` | `http://localhost:8080` | Content browser API URL (if using a separate content service) |
 
 ### Authentication
 
@@ -103,13 +120,16 @@ export DAZ_API_TOKEN="your-token-here"
 
 ---
 
-## Claude Desktop Configuration
+## MCP Client Configuration
 
-Add this to your Claude Desktop config file:
+### Claude Desktop
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Config file location:
 
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+**macOS / Linux:**
 ```json
 {
   "mcpServers": {
@@ -118,7 +138,7 @@ Add this to your Claude Desktop config file:
       "args": [
         "run",
         "--project",
-        "/absolute/path/to/vangard-daz-mcp",
+        "/absolute/path/to/daz-mcp-server",
         "vangard-daz-mcp"
       ],
       "env": {
@@ -130,9 +150,101 @@ Add this to your Claude Desktop config file:
 }
 ```
 
-**Note:** Replace `/absolute/path/to/vangard-daz-mcp` with the actual path on your system (e.g. `Y:/working/BlueMoonFoundry/daz-mcp-server` on Windows). Use `--project` (not `--directory`) so `uv run` picks up the project's `.venv` where the editable `dazpy` dependency is installed.
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "vangard-daz-mcp": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "C:\\Users\\YourName\\daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
 
-After saving the config, restart Claude Desktop. The DAZ Studio tools will appear in Claude's tool palette.
+Replace the path with the actual location where you cloned the repo. Use `--project` (not `--directory`) so `uv run` picks up the project's `.venv`.
+
+After saving the config, **restart Claude Desktop**. The DAZ Studio tools will appear in Claude's tool palette.
+
+---
+
+### Cursor
+
+Add to `.cursor/mcp.json` in your project, or `~/.cursor/mcp.json` for global access:
+
+```json
+{
+  "mcpServers": {
+    "vangard-daz-mcp": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
+
+---
+
+### VS Code (GitHub Copilot / MCP extension)
+
+Add to `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "vangard-daz-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/daz-mcp-server",
+        "vangard-daz-mcp"
+      ],
+      "env": {
+        "DAZ_HOST": "localhost",
+        "DAZ_PORT": "18811"
+      }
+    }
+  }
+}
+```
+
+---
+
+### Verifying the connection
+
+After configuration, ask your MCP client:
+
+```
+Check if DAZ Studio is running
+```
+
+Claude will call `daz_status`. A successful response looks like:
+
+```json
+{ "running": true, "version": "1.3.0" }
+```
+
+If it fails, see the [Troubleshooting](#troubleshooting) section below.
 
 ---
 
@@ -3072,7 +3184,7 @@ vangard-daz-mcp/
 - **FastMCP 3.x server** with stdio transport (137 tools registered)
 - **Modular tool package**: 13 focused modules under `tools/`; `@mcp.tool()` decorators fire at import time via the shared `mcp` instance from `_mcp.py`, avoiding circular imports with `server.py`
 - **httpx.AsyncClient** for HTTP requests to DazScriptServer; managed in `_client.py` singleton
-- **dazpy SDK** (editable dep from `../daz-script-server`): synchronous Python SDK; all dazpy calls wrapped in `asyncio.to_thread` via `run_dazpy()`
+- **dazpy SDK** (installed from PyPI as `dazpy>=2.6.0`): synchronous Python SDK; all dazpy calls wrapped in `asyncio.to_thread` via `run_dazpy()`
 - **Script registry** (`_registry.py`): high-level tool scripts pre-registered at startup, executed by ID; auto-re-registered on 404 when DAZ Studio restarts
 - **lifespan context** manages httpx client initialization and cleanup
 
@@ -3084,7 +3196,7 @@ vangard-daz-mcp/
 - **Dependencies:**
   - `fastmcp>=2.0` - MCP server framework
   - `httpx>=0.27` - Async HTTP client
-  - `dazpy` - Synchronous Python SDK for DazScriptServer (editable install from `../daz-script-server`)
+  - `dazpy>=2.6.0` - Synchronous Python SDK for DazScriptServer (installed from PyPI)
 - **Dev Dependencies:**
   - `pytest>=8.0`
   - `pytest-asyncio>=0.24`
@@ -3119,11 +3231,11 @@ vangard-daz-mcp/
 
 Contributions welcome! Areas for improvement:
 
-- Material property tools (read/set surface colors, textures, shader settings)
 - Support for binary data (screenshot capture, returning rendered images directly)
 - Integration tests with a real DAZ Studio instance
 - More DazScript documentation topics in `dazscript_docs.json`
 - Additional lighting presets and emotion definitions
+- Remote DAZ Studio support (connect to DAZ Studio on a different machine)
 
 ---
 
