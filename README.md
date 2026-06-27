@@ -363,6 +363,24 @@ Read all numeric properties of a node by its label or internal name.
 
 ---
 
+#### `daz_get_selected_nodes`
+Return the nodes currently selected in the DAZ Studio viewport.
+
+**Returns:**
+```json
+{
+  "count": 2,
+  "nodes": [
+    {"label": "Genesis 9", "name": "Genesis9"},
+    {"label": "Camera 1", "name": "Camera"}
+  ]
+}
+```
+
+**Use when:** The user has manually selected items in DAZ Studio and wants the AI to act on that selection.
+
+---
+
 ### 🔬 Morph Discovery Tools
 
 #### `daz_list_morphs`
@@ -995,6 +1013,52 @@ for cam in ["Camera 1", "Camera 2", "Camera 3"]:
 ```
 
 **Note:** Preset can be applied to any camera, not just the original. Useful for synchronizing multiple cameras.
+
+---
+
+#### `daz_list_cameras`
+List all cameras currently in the scene.
+
+**Returns:**
+```json
+{
+  "camera_count": 2,
+  "cameras": [
+    {"name": "Camera", "label": "Camera 1", "focal_length": 65.0},
+    {"name": "Camera2", "label": "Wide Shot", "focal_length": 35.0}
+  ]
+}
+```
+
+**Use when:** Discovering what cameras exist before calling `daz_set_active_camera` or `daz_render_with_camera`.
+
+---
+
+#### `daz_create_camera`
+Create a new camera and add it to the scene.
+
+**Arguments:**
+- `label` (string): Display name for the new camera
+- `x`, `y`, `z` (float): World-space position in cm (defaults: 0, 150, 300)
+- `aim_at_label` (string, optional): Aim the camera at this node's centre
+- `focal_length` (float, optional): Lens focal length in mm
+
+**Returns:**
+```json
+{
+  "label": "Close-up Cam",
+  "position": {"x": 0, "y": 160, "z": 120},
+  "focal_length": 85.0
+}
+```
+
+**Example:**
+```
+daz_create_camera("Close-up Cam", x=0, y=160, z=120,
+                  aim_at_label="Genesis 9", focal_length=85)
+```
+
+**Note:** Use `daz_list_cameras` to confirm the camera was added, and `daz_set_active_camera` to switch the active viewport.
 
 ---
 
@@ -1687,6 +1751,115 @@ Validate scene quality for rendering — checks lighting, cameras, collisions.
 
 ---
 
+#### `daz_list_lights`
+List all lights currently in the scene.
+
+**Returns:**
+```json
+{
+  "light_count": 3,
+  "lights": [
+    {"name": "SpotLight", "label": "Key Light", "intensity": 10000, "shadow_type": "Raytraced"},
+    {"name": "DistantLight", "label": "Sun", "intensity": 5000, "shadow_type": "None"}
+  ]
+}
+```
+
+**Use when:** Checking what lights exist before modifying or deleting them.
+
+---
+
+#### `daz_create_light`
+Create a new light and add it to the scene.
+
+**Arguments:**
+- `light_type` (string): `"spot"`, `"distant"`, or `"point"`
+- `label` (string): Display name for the new light
+- `x`, `y`, `z` (float): World-space position in cm (defaults: 0, 200, 200)
+- `flux` (float, optional): Light intensity in DAZ flux units
+- `aim_at_label` (string, optional): Aim the light at this node's centre
+
+**Returns:**
+```json
+{
+  "label": "Key Light",
+  "type": "spot",
+  "position": {"x": 150, "y": 250, "z": 200},
+  "flux": 10000
+}
+```
+
+**Example:**
+```
+daz_create_light("spot", "Key Light", x=150, y=250, z=200,
+                 flux=10000, aim_at_label="Genesis 9")
+```
+
+**Note:** For complete multi-light setups use `daz_apply_lighting_preset` or `daz_apply_visual_style` instead.
+
+---
+
+#### `daz_set_scene_atmosphere`
+Configure the DAZ Studio environment node (HDRI dome, Sun-Sky, ambient lighting).
+
+**Arguments:**
+- `environment_mode` (int, optional): `0`=Sun-Sky Only, `1`=Dome Only, `2`=Sun-Sky+Dome, `3`=Scene Only (use `3` when relying on scene lights)
+- `environment_intensity` (float, optional): Brightness of dome/sun-sky (0.0–10.0)
+- `draw_dome` (bool, optional): Whether the HDRI image is visible as the background
+- `dome_rotation` (float, optional): Horizontal rotation of HDRI dome in degrees (0–360)
+- `sun_light_intensity` (float, optional): Sun component brightness in modes 0 or 2
+
+**Returns:**
+```json
+{
+  "changesApplied": ["environment_mode → 3"],
+  "changeCount": 1,
+  "currentEnvironmentMode": 3
+}
+```
+
+**Example:**
+```
+# Required before using lighting presets so dome doesn't wash out scene lights
+daz_set_scene_atmosphere(environment_mode=3)
+
+# Dimmed HDRI dome blended with scene lights
+daz_set_scene_atmosphere(environment_mode=1, environment_intensity=0.2, draw_dome=True)
+```
+
+---
+
+#### `daz_apply_visual_style`
+Apply a holistic cinematic visual style — creates/reconfigures three named lights (Style_Key, Style_Fill, Style_Rim) with ratios and angles tuned for the chosen look. Sets environment to Scene Only mode automatically.
+
+**Arguments:**
+- `style_name` (string): One of `"cinematic"`, `"noir"`, `"golden-hour"`, `"blue-hour"`, `"high-key"`, `"low-key"`, `"documentary"`, `"fantasy"`
+- `subject_label` (string, optional): Node to aim lights at
+- `intensity` (float, default `1.0`): Scale factor for all light flux (0.1–5.0)
+
+**Returns:**
+```json
+{
+  "styleName": "cinematic",
+  "lights": [
+    {"role": "key", "label": "Style_Key", "flux": 12000, "angle": 45},
+    {"role": "fill", "label": "Style_Fill", "flux": 3000, "angle": -45},
+    {"role": "rim", "label": "Style_Rim", "flux": 8000, "angle": 180}
+  ],
+  "lightingRatios": {"keyToFill": 4.0, "keyToRim": 1.5}
+}
+```
+
+**Example:**
+```
+daz_apply_visual_style("cinematic", subject_label="Genesis 9")
+daz_apply_visual_style("noir", subject_label="Alice", intensity=0.8)
+```
+
+**Note:** Fine-tune individual lights afterward with `daz_set_property("Style_Key", "Flux", 15000)`.
+
+---
+
 ### 🎭 Emotional Direction
 
 #### `daz_set_emotion`
@@ -1988,6 +2161,72 @@ List all saved checkpoints in the current session.
 
 ---
 
+#### `daz_export_node_config`
+Export scene node properties to a portable JSON file for reuse across scenes or after server restarts. Complements in-memory checkpoints with persistent, file-based storage.
+
+**Arguments:**
+- `output_path` (string): Absolute path for the output `.json` file
+- `node_labels` (list, optional): Specific node labels to capture; if omitted captures all skeletons, cameras, and lights
+- `include_types` (list, optional): Property categories to capture: `"transforms"`, `"morphs"`, `"lights"`, `"cameras"` (default: all)
+
+**Returns:**
+```json
+{
+  "outputPath": "C:/shots/hero_pose.json",
+  "nodeCount": 3,
+  "propertyCount": 18,
+  "morphCount": 5,
+  "fileSizeBytes": 4096
+}
+```
+
+**Example:**
+```python
+# Export current pose and morphs for Genesis 9
+daz_export_node_config(
+    "C:/poses/alice_surprised.json",
+    node_labels=["Alice"],
+    include_types=["transforms", "morphs"]
+)
+
+# Export a camera rig for reuse in other scenes
+daz_export_node_config("C:/presets/interview_cameras.json",
+                        node_labels=["Camera A", "Camera B"],
+                        include_types=["transforms", "cameras"])
+```
+
+---
+
+#### `daz_import_node_config`
+Apply a previously exported node config file to the current scene. Nodes are matched by exact label.
+
+**Arguments:**
+- `input_path` (string): Absolute path to the `.json` config file
+- `node_labels` (list, optional): Subset of nodes to import from the file
+- `skip_missing` (bool, default `True`): Silently skip nodes that don't exist in the current scene
+- `scale_transforms` (float, default `1.0`): Scale factor for translation values (e.g. `0.01` to convert cm→m)
+
+**Returns:**
+```json
+{
+  "totalNodes": 2,
+  "successCount": 2,
+  "failureCount": 0,
+  "skippedCount": 0
+}
+```
+
+**Example:**
+```python
+# Restore a full scene setup
+daz_import_node_config("C:/shots/hero_pose.json")
+
+# Import only Alice's pose from a multi-character file
+daz_import_node_config("C:/shots/crowd.json", node_labels=["Alice"])
+```
+
+---
+
 ### 🗺️ Scene Layout & Proximity
 
 #### `daz_get_scene_layout`
@@ -2199,6 +2438,37 @@ Set render quality preset before rendering.
 
 ---
 
+#### `daz_render_batch`
+Submit a batch of render variants atomically — all validated before any render is queued, each independently cancellable.
+
+**Arguments:**
+- `variants` (list): List of render specs. Each must include `output_path`. Optional per-variant overrides: `width`, `height`, `camera`, `engine`, `iray_samples`, `figure`/`figures`, `morphs`.
+- `base` (dict, optional): Default settings shared by all variants (overridden by matching keys in each variant).
+
+**Returns:**
+```json
+{
+  "request_ids": ["rnd-a1b2c3d4", "rnd-e5f6g7h8"],
+  "total": 2
+}
+```
+
+**Example — product photography with expression variants:**
+```python
+daz_render_batch(
+    base={"figure": "Genesis 9", "width": 1920, "height": 1080},
+    variants=[
+        {"output_path": "C:/out/neutral.png", "morphs": {"Smile": 0.0}},
+        {"output_path": "C:/out/smile.png",   "morphs": {"Smile": 1.0}},
+        {"output_path": "C:/out/serious.png", "morphs": {"Brow Down": 0.5}},
+    ]
+)
+```
+
+Use `daz_get_request_status` / `daz_get_request_result` to monitor each `request_id`. Up to 100 variants per call.
+
+---
+
 **Async workflow example:**
 
 ```python
@@ -2216,6 +2486,39 @@ while True:
 # 3. Or use wait=True in one step
 result = daz_get_request_result(req["request_id"], wait=True, timeout_seconds=3600)
 ```
+
+---
+
+#### `daz_wait_for_scene_event`
+Block until a specific DAZ Studio scene event fires, using a Server-Sent Events (SSE) stream.
+
+**Arguments:**
+- `event_types` (list[string]): One or more event types to wait for
+- `timeout_seconds` (int, default `30`): Max wait time before raising an error
+
+**Available event types:**
+`render.started`, `render.finished`, `render.progress`, `scene.loaded`, `scene.saved`, `node.added`, `node.removed`, `node.renamed`, `selection.primary_changed`, `time.changed`, `playback.started`, `playback.stopped`, `light.added`, `light.removed`, `camera.added`, `camera.removed`, `skeleton.added`, `skeleton.removed`
+
+**Returns:**
+```json
+{
+  "type": "render.finished",
+  "ts": "2026-01-01T12:00:05Z",
+  "data": {}
+}
+```
+
+**Example:**
+```python
+# Fire a render then block until it finishes
+daz_render_async("/renders/final.png")
+event = daz_wait_for_scene_event(["render.finished"], timeout_seconds=3600)
+
+# Wait for a scene load or save
+daz_wait_for_scene_event(["scene.loaded", "scene.saved"], timeout_seconds=60)
+```
+
+**Note:** Requires DazScriptServer to support the `GET /scene/events` SSE endpoint (available in DazScriptServer v2.5+).
 
 ---
 
@@ -2754,6 +3057,66 @@ daz_load_file(file_path="/Library/Genesis 9/Character.duf", merge=True)
 
 ---
 
+#### `daz_save_scene`
+Save the current DAZ Studio scene to disk.
+
+**Arguments:**
+- `file_path` (string, optional): Absolute path for Save As. If omitted, saves to the scene's current filename (equivalent to Ctrl+S).
+
+**Returns:** `{"saved": true, "file_path": "/path/to/scene.duf"}`
+
+**Note:** If the scene has never been saved and no `file_path` is given, provide an explicit path to avoid DAZ opening a dialog.
+
+---
+
+#### `daz_save_scene_copy`
+Save a copy of the current scene to a new path **without** changing the scene's active filename.
+
+**Arguments:**
+- `path` (string): Absolute destination path
+
+**Returns:** `{"ok": true, "path": "/path/to/copy.duf", "source": "/path/to/original.duf", "method": "file-copy"}`
+
+**Example:**
+```
+daz_save_scene_copy("C:/backups/hero_v02.duf")
+```
+
+**Note:** Use this for backups and snapshots. Use `daz_save_scene` when you actually want to switch to a new file.
+
+---
+
+#### `daz_delete_node`
+Remove a node and its children from the scene.
+
+**Arguments:**
+- `node_label` (string): Display label or internal name of the node to delete
+
+**Returns:** `{"deleted": "Key Light", "child_count": 0}`
+
+**Note:** Destructive — cannot be undone without reloading from file. Save the scene first with `daz_save_scene` if you need a recovery point.
+
+---
+
+#### `daz_set_render_output`
+Configure render output path and/or image dimensions.
+
+**Arguments:**
+- `output_path` (string, optional): Absolute path for the rendered image (e.g. `"C:/renders/hero_shot.png"`)
+- `width` (int, optional): Render image width in pixels
+- `height` (int, optional): Render image height in pixels
+
+At least one argument must be provided.
+
+**Returns:** `{"changed": ["outputPath", "width", "height"], "current": {...}}`
+
+**Example:**
+```
+daz_set_render_output(output_path="C:/renders/scene01.png", width=1920, height=1080)
+```
+
+---
+
 ### 🎬 Rendering Tools
 
 #### `daz_render`
@@ -2926,6 +3289,57 @@ daz_interactive_pose("Bob", "Alice", "shoulder-arm")
 ```
 
 **Note:** These are simplified interaction poses. Fine-tune positions afterward using `daz_set_property`.
+
+---
+
+#### `daz_reset_pose`
+Zero all bone rotations on a figure, returning it to its rest pose.
+
+**Arguments:**
+- `node_label` (string): Figure to reset
+- `zero_transforms` (bool, default `False`): If True, also zero the root XYZ translation and reset Scale to 1.0
+
+**Returns:** `{"node": "Genesis 9", "bones_reset": 127, "transforms_zeroed": false}`
+
+**Note:** Does not affect morph values or animation keyframes.
+
+---
+
+#### `daz_save_pose`
+Capture all bone rotations from a figure and save to a portable JSON pose file.
+
+**Arguments:**
+- `figure_label` (string): Source figure
+- `pose_name` (string): Human-readable name stored in the file
+- `output_path` (string): Absolute path for the `.json` output file
+
+**Returns:** `{"success": true, "bone_count": 127, "file": "/path/to/pose.json"}`
+
+**Example:**
+```
+daz_save_pose("Genesis 9", "Hero Idle", "C:/poses/hero_idle.json")
+```
+
+---
+
+#### `daz_load_pose`
+Apply a saved pose file to a figure.
+
+**Arguments:**
+- `figure_label` (string): Target figure
+- `pose_path` (string): Absolute path to the `.json` pose file
+- `bone_group` (string, default `"full"`): Filter which bones to apply — `"full"`, `"arms_only"`, `"legs_only"`, or `"spine"`
+
+**Returns:** `{"success": true, "bones_applied": 127, "bones_skipped": 0}`
+
+**Example:**
+```
+# Apply full pose
+daz_load_pose("Genesis 9", "C:/poses/hero_idle.json")
+
+# Apply only the arms from a pose to a different character
+daz_load_pose("Alice", "C:/poses/reaching.json", bone_group="arms_only")
+```
 
 ---
 

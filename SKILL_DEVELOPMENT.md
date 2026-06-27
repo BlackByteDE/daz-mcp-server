@@ -7,7 +7,7 @@ Technical documentation for server internals and the MCP bridge.
 ## Module Layout (v0.4.0)
 - `server.py` — 15-line entry point; imports `_mcp` then `tools`
 - `_mcp.py` — shared `FastMCP` instance, lifespan, `_execute*` helpers
-- `_client.py` — httpx client singleton + env config (`DAZ_HOST`, `DAZ_PORT`, `DAZ_TIMEOUT`, `DAZ_API_TOKEN`)
+- `_client.py` — httpx client singleton + env config (`DAZ_HOST`, `DAZ_PORT`, `DAZ_TIMEOUT`, `DAZ_API_TOKEN`, `DAZ_CONTENT_BROWSER_URL`)
 - `_errors.py` — `handle_network_error()`, `check_response()`
 - `_registry.py` — `_register_scripts()` with all pre-registered script payloads
 - `tools/__init__.py` — imports all 13 tool modules (137 tools total)
