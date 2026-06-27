@@ -249,6 +249,55 @@ If it fails, see the [Troubleshooting](#troubleshooting) section below.
 
 ---
 
+## Domain Reference Files (SKILL files)
+
+The repository ships six **SKILL files** — curated knowledge documents that you can ask Claude (or any MCP client) to read before working in a particular area of DAZ Studio. They exist because LLMs have reasonable general knowledge about 3D software but will make confident, wrong assumptions about DAZ Studio specifics — inverted rotation signs, broken API methods, generation-specific bone names, and so on. Loading the right SKILL file before a task corrects those assumptions and produces dramatically better results.
+
+### How to use them
+
+Ask Claude to read the relevant file at the start of a session or task:
+
+```
+Read the file SKILL_DAZ_STUDIO.md before we begin.
+```
+
+```
+Before writing any DazScript code, read SKILL_DAZSCRIPT.md.
+```
+
+You can load more than one if your task spans domains:
+
+```
+Read SKILL_DAZ_STUDIO.md and SKILL_CINEMA.md — we're going to set up a portrait shot.
+```
+
+---
+
+### SKILL file reference
+
+| File | Domain | Load when… |
+|------|--------|------------|
+| [`SKILL_DAZ_STUDIO.md`](SKILL_DAZ_STUDIO.md) | DAZ Studio conventions | Starting any session — covers coordinate system inversions, camera Y-rotation being backwards, bone rotation limits, and known tool limitations |
+| [`SKILL_DAZSCRIPT.md`](SKILL_DAZSCRIPT.md) | DazScript API | Writing or debugging custom scripts via `daz_execute` — documents verified-working API patterns and a list of broken/wrong methods to avoid |
+| [`SKILL_SCENE.md`](SKILL_SCENE.md) | Scene management | Working with scene hierarchy, content library, spatial layout, materials, or batch operations |
+| [`SKILL_ACTORS.md`](SKILL_ACTORS.md) | Characters & posing | Working with morphs, emotions, body language, gaze direction, wardrobe, or multi-character interactions |
+| [`SKILL_CINEMA.md`](SKILL_CINEMA.md) | Cameras, lighting & rendering | Composing shots, setting up lighting rigs, animating cameras, or running renders |
+| [`SKILL_DEVELOPMENT.md`](SKILL_DEVELOPMENT.md) | MCP server internals | Modifying or extending the MCP server itself — module layout, how to add tools, the script registry |
+
+---
+
+### When to load `SKILL_DAZ_STUDIO.md`
+
+This is the most important file and the one most likely to save you from a frustrating session. Key things it corrects:
+
+- **Camera Y rotation is inverted** — positive values turn the camera *left*, not right. Every other 3D application does this the other way.
+- **`daz_look_at_point` applies rotations in the wrong direction** — always verify in the viewport and correct manually.
+- **`daz_orbit_camera_around` aims at the figure's root (feet), not the face** — use explicit world-space coordinates for portrait work instead.
+- **Genesis 9 faces +Z by default** — "in front of" a character is at a positive Z coordinate.
+- **Focal distance requires true 3D distance** — using Z distance alone throws portrait shots out of focus.
+
+---
+
 ## Available Tools
 
 ### 📚 Documentation Tools
