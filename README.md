@@ -8,7 +8,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that ex
 
 ## What Is This?
 
-This MCP server allows Claude (via Claude Desktop or other MCP clients) to control DAZ Studio directly:
+This MCP server allows Claude (via Claude Desktop or other MCP clients) to control DAZ Studio directly (at least these are the aspirational goals, not all of them are working just yet!):
 - Query scene information (figures, cameras, lights, spatial positions)
 - Read and modify node properties (transforms, morphs)
 - Discover and apply morphs, including searching by name pattern
