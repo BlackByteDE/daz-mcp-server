@@ -34,6 +34,10 @@ def handle_dazpy_error(exc: Exception) -> None:
         ) from exc
     if isinstance(exc, daz_exc.NodeNotFoundError):
         raise ToolError(str(exc)) from exc
+    if isinstance(exc, daz_exc.DazBusyError):
+        raise ToolError(
+            f"DAZ Studio is busy ({exc.reason}). Try again in a few seconds."
+        ) from exc
     if isinstance(exc, (daz_exc.ScriptRuntimeError, daz_exc.ScriptSyntaxError)):
         raise ToolError(exc.diagnostic) from exc
     raise exc
