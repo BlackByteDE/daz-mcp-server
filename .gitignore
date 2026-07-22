@@ -7,6 +7,9 @@ __pycache__/
 dist/
 *.egg-info/
 
+# Local git worktrees
+.worktrees/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
