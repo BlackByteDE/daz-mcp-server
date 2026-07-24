@@ -28,12 +28,18 @@ def handle_dazpy_error(exc: Exception) -> None:
             "Increase the timeout by setting the DAZ_TIMEOUT environment variable."
         ) from exc
     if isinstance(exc, daz_exc.AuthenticationError):
-        source = "DAZ_API_TOKEN environment variable" if os.environ.get("DAZ_API_TOKEN") else TOKEN_FILE
+        source = (
+            "DAZ_API_TOKEN environment variable" if os.environ.get("DAZ_API_TOKEN") else TOKEN_FILE
+        )
         raise ToolError(
             f"Authentication failed. Verify the API token in: {source}"
         ) from exc
     if isinstance(exc, daz_exc.NodeNotFoundError):
         raise ToolError(str(exc)) from exc
+    if isinstance(exc, daz_exc.DazBusyError):
+        raise ToolError(
+            f"DAZ Studio is busy ({exc.reason}). Try again in a few seconds."
+        ) from exc
     if isinstance(exc, (daz_exc.ScriptRuntimeError, daz_exc.ScriptSyntaxError)):
         raise ToolError(exc.diagnostic) from exc
     raise exc
@@ -61,7 +67,9 @@ def handle_network_error(exc: Exception) -> None:
 def check_response(response: httpx.Response) -> None:
     """Raise ToolError for known HTTP error statuses."""
     if response.status_code == 401:
-        source = "DAZ_API_TOKEN environment variable" if os.environ.get("DAZ_API_TOKEN") else TOKEN_FILE
+        source = (
+            "DAZ_API_TOKEN environment variable" if os.environ.get("DAZ_API_TOKEN") else TOKEN_FILE
+        )
         raise ToolError(
             f"Authentication failed (HTTP 401). Verify the API token in: {source}"
         )
