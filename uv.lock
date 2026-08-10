@@ -379,6 +379,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/d4/dd/b5038b76b6259036ebc08cd904af03fcb35a1239ac012c812ea87fdb935b/dazpy-2.6.0.tar.gz", hash = "sha256:ac66ad200d1d976b1e4028cb1eef154b5364487824cc69830c632277c72d7a24", size = 193554, upload-time = "2026-06-27T16:32:47.447Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/f3/050a17ffedd9a6fec7378a16705eebc724bdbe4a27e0c8be77a816db4bd6/dazpy-2.6.0-py3-none-any.whl", hash = "sha256:5b7f0d18bd5c84f25c39201acf7e09b0d508cef178de78d6159b7d19cdd2bffe", size = 106373, upload-time = "2026-06-26T18:32:24.363Z" },
 ]
@@ -1357,7 +1358,7 @@ wheels = [
 
 [[package]]
 name = "vangard-daz-mcp"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "dazpy" },
