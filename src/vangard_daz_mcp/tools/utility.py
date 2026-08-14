@@ -645,6 +645,7 @@ async def daz_stop_recording() -> dict[str, Any]:
         raise ToolError("No macro recording in progress. Use daz_start_recording() first.")
 
     # Finalize macro
+    # pylint: disable=unsubscriptable-object,unsupported-assignment-operation
     _current_macro["saved_at"] = datetime.now().isoformat()
     operation_count = len(_current_macro["operations"])
 
@@ -661,6 +662,7 @@ async def daz_stop_recording() -> dict[str, Any]:
         "saved_at": _current_macro["saved_at"],
         "message": f"Macro '{macro_name}' saved with {operation_count} operations.",
     }
+    # pylint: enable=unsubscriptable-object,unsupported-assignment-operation
 
     _macro_recording = False
     _current_macro = None
