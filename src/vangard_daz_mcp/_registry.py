@@ -1279,9 +1279,16 @@ _GET_RENDER_SETTINGS_SCRIPT = """\
     var renderMgr = App.getRenderMgr();
     var opts = renderMgr.getRenderOptions();
 
+    // DzRenderOptions.renderImgToId is an enum, and DirectToFile is 2 - not 0.
+    // Comparing against 0 made renderToFile always false and outputPath always
+    // null, even with a correctly configured file render. Compare against the
+    // named constant so this cannot drift again.
+    var directToFile = Number(opts.DirectToFile);
+    var rendersToFile = Number(opts.renderImgToId) === directToFile;
+
     var result = {
-        renderToFile: opts.renderImgToId === 0,
-        outputPath: opts.renderImgToId === 0 ? opts.renderImgFilename : null,
+        renderToFile: rendersToFile,
+        outputPath: rendersToFile ? opts.renderImgFilename : null,
         aspectRatio: opts.aspect,
         aspectWidth: opts.aspectWidth,
         aspectHeight: opts.aspectHeight
