@@ -1,3 +1,4 @@
+"""Wardrobe tools: fitting, unfitting, and inspecting clothing/hair items."""
 from __future__ import annotations
 
 from typing import Any
@@ -5,8 +6,6 @@ from typing import Any
 from fastmcp.exceptions import ToolError
 
 from .._mcp import mcp, _execute_by_id
-from .._client import get_http_client
-from .._errors import handle_network_error, check_response
 
 
 @mcp.tool()
@@ -283,7 +282,9 @@ async def daz_set_subdivision(node_label: str, level: int) -> dict[str, Any]:
     """
     if level < 0 or level > 4:
         raise ToolError(f"Subdivision level must be between 0 and 4, got {level}")
-    return await _execute_by_id("vangard-set-subdivision", {"nodeLabel": node_label, "level": level})
+    return await _execute_by_id(
+        "vangard-set-subdivision", {"nodeLabel": node_label, "level": level}
+    )
 
 
 @mcp.tool()

@@ -14,19 +14,15 @@ Tools covered
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
 from fastmcp.exceptions import ToolError
 
-from vangard_daz_mcp.server import (
+from vangard_daz_mcp.tools.figure import (
     daz_interactive_pose,
-    daz_list_morphs,
     daz_look_at_character,
     daz_look_at_point,
     daz_reach_toward,
-    daz_search_morphs,
-    daz_set_emotion,
-    daz_set_property,
 )
+from vangard_daz_mcp.tools.morph import daz_list_morphs, daz_search_morphs, daz_set_emotion
 
 
 # ---------------------------------------------------------------------------

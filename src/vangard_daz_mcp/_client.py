@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 import httpx
 from dazpy import DazClient, DazScene
@@ -43,22 +43,26 @@ _content_browser_client: httpx.AsyncClient | None = None
 
 
 def set_http_client(client: httpx.AsyncClient | None) -> None:
+    """Set (or clear) the shared DazScriptServer httpx client."""
     global _http_client
     _http_client = client
 
 
 def set_content_browser_client(client: httpx.AsyncClient | None) -> None:
+    """Set (or clear) the shared content-browser httpx client."""
     global _content_browser_client
     _content_browser_client = client
 
 
 def get_http_client() -> httpx.AsyncClient:
+    """Return the shared DazScriptServer httpx client, once the server lifespan has set it."""
     if _http_client is None:
         raise RuntimeError("HTTP client not initialised — server lifespan not running")
     return _http_client
 
 
 def get_content_browser_client() -> httpx.AsyncClient:
+    """Return the shared content-browser httpx client, once the server lifespan has set it."""
     if _content_browser_client is None:
         raise RuntimeError("Content browser client not initialised — server lifespan not running")
     return _content_browser_client
@@ -73,6 +77,7 @@ _daz_scene: DazScene | None = None
 
 
 def get_daz_client() -> DazClient:
+    """Return the singleton DazClient, creating it on first access."""
     global _daz_client
     if _daz_client is None:
         _daz_client = DazClient(
@@ -85,10 +90,22 @@ def get_daz_client() -> DazClient:
 
 
 def get_scene() -> DazScene:
+    """Return the singleton DazScene, creating it on first access."""
     global _daz_scene
     if _daz_scene is None:
         _daz_scene = DazScene(get_daz_client())
     return _daz_scene
+
+
+def set_scene(scene: DazScene | None) -> None:
+    """Override the DazScene singleton — for injecting a test double.
+
+    Without this, tests that mock only the httpx client (e.g. via respx) can
+    silently fall through to a real DazScene/DazClient connection for any tool
+    that uses get_scene()/run_dazpy(), reaching a live DAZ Studio instance.
+    """
+    global _daz_scene
+    _daz_scene = scene
 
 
 async def run_dazpy(fn: Callable[[], _T]) -> _T:

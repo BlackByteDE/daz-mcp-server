@@ -14,13 +14,10 @@ Renders are cancelled immediately after starting to avoid long test times.
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
-import pytest_asyncio
 from fastmcp.exceptions import ToolError
 
-from vangard_daz_mcp.server import (
+from vangard_daz_mcp.tools.render import (
     daz_cancel_request,
     daz_get_request_result,
     daz_get_request_status,

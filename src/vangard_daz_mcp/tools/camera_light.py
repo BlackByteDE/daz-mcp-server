@@ -451,7 +451,9 @@ async def daz_list_lights() -> dict[str, Any]:
         lights = scene.lights()
         result = []
         for light in lights:
-            name = light._identifier.value
+            name = light._identifier.value  # pylint: disable=protected-access
+            # ._identifier.value is dazpy's documented way to read a node's
+            # internal name (see daz-script-server's own README examples).
             info: dict[str, Any] = {"name": name}
             # label makes one HTTP call per light
             try:
@@ -559,7 +561,7 @@ async def daz_list_cameras() -> dict[str, Any]:
         cameras = scene.cameras()
         result = []
         for camera in cameras:
-            name = camera._identifier.value
+            name = camera._identifier.value  # pylint: disable=protected-access
             info: dict[str, Any] = {"name": name}
             try:
                 info["label"] = camera.label or name
@@ -633,7 +635,8 @@ async def daz_create_camera(
 @mcp.tool()
 async def daz_set_mood_lighting(
     mood: str,
-    figure_label: str | None = None,
+    figure_label: str | None = None,  # pylint: disable=unused-argument
+    # Reserved for future per-figure filtering; see docstring below.
 ) -> dict[str, Any]:
     """Apply a mood-based lighting colour and intensity adjustment to all scene lights.
 
@@ -692,7 +695,8 @@ async def daz_set_mood_lighting(
 @mcp.tool()
 async def daz_apply_time_of_day(
     time_of_day: str,
-    figure_label: str | None = None,
+    figure_label: str | None = None,  # pylint: disable=unused-argument
+    # Reserved for future per-figure filtering; see docstring below.
 ) -> dict[str, Any]:
     """Adjust all scene lights to simulate a particular time of day.
 
