@@ -99,13 +99,15 @@ async def daz_get_render_settings() -> dict[str, Any]:
       - aspectRatio: aspect ratio value
       - aspectWidth: aspect width component
       - aspectHeight: aspect height component
+      - width: render image width in pixels
+      - height: render image height in pixels
 
     Example:
         # Check render settings
         settings = daz_get_render_settings()
         print(f"Render camera: {settings['currentCamera']}")
         print(f"Output: {settings['outputPath']}")
-        print(f"Aspect: {settings['aspectWidth']}x{settings['aspectHeight']}")
+        print(f"Size: {settings['width']}x{settings['height']}")
 
         # Verify render is configured correctly before batch render
         settings = daz_get_render_settings()
@@ -113,8 +115,8 @@ async def daz_get_render_settings() -> dict[str, Any]:
             print("Warning: Render is configured for viewport, not file output")
 
     Note:
-        - Aspect ratio determines render dimensions relative to each other
-        - Pixel dimensions cannot be set reliably via DazScript
+        - width/height come from DzRenderOptions.imageSize (pixels)
+        - Use daz_set_render_output to persist DirectToFile + path + size
         - currentCamera may be null if using active viewport camera
     """
     return await _execute_by_id("vangard-get-render-settings", {})

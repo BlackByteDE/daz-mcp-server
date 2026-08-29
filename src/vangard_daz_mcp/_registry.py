@@ -121,10 +121,11 @@ _RENDER_SCRIPT = """\
     var renderMgr = App.getRenderMgr();
     var opts = renderMgr.getRenderOptions();
     if (args.outputPath) {
-        opts.renderImgToId = 0;
+        opts.renderImgToId = opts.DirectToFile;
         opts.renderImgFilename = args.outputPath;
+        opts.applyChanges();
     }
-    renderMgr.doRender();
+    renderMgr.doRender(opts);
     return { success: true };
 })()
 """
@@ -1247,18 +1248,16 @@ _RENDER_WITH_CAMERA_SCRIPT = """\
     // Set render camera
     opts.camera = cam;
 
-    // Set output if provided
     if (args.outputPath) {
-        opts.renderImgToId = 0;
+        opts.renderImgToId = opts.DirectToFile;
         opts.renderImgFilename = args.outputPath;
     }
+    opts.applyChanges();
+    renderMgr.doRender(opts);
 
-    // Render
-    renderMgr.doRender();
-
-    // Restore previous camera
     if (previousCam) {
         opts.camera = previousCam;
+        opts.applyChanges();
     }
 
     return {
@@ -1285,12 +1284,15 @@ _GET_RENDER_SETTINGS_SCRIPT = """\
     var directToFile = Number(opts.DirectToFile);
     var rendersToFile = Number(opts.renderImgToId) === directToFile;
 
+    var sz = opts.imageSize;
     var result = {
         renderToFile: rendersToFile,
         outputPath: rendersToFile ? opts.renderImgFilename : null,
         aspectRatio: opts.aspect,
         aspectWidth: opts.aspectWidth,
-        aspectHeight: opts.aspectHeight
+        aspectHeight: opts.aspectHeight,
+        width: sz ? sz.width : null,
+        height: sz ? sz.height : null
     };
 
     // Get current render camera
@@ -1334,13 +1336,11 @@ _BATCH_RENDER_CAMERAS_SCRIPT = """\
             }
             outputPath += baseFilename + "_" + camLabel.replace(/[^a-zA-Z0-9]/g, "_") + ".png";
 
-            // Set camera and output
             opts.camera = cam;
-            opts.renderImgToId = 0;
+            opts.renderImgToId = opts.DirectToFile;
             opts.renderImgFilename = outputPath;
-
-            // Render
-            renderMgr.doRender();
+            opts.applyChanges();
+            renderMgr.doRender(opts);
 
             rendered.push({
                 camera: cam.getLabel(),
@@ -1349,9 +1349,9 @@ _BATCH_RENDER_CAMERAS_SCRIPT = """\
         }
     }
 
-    // Restore previous camera
     if (previousCam) {
         opts.camera = previousCam;
+        opts.applyChanges();
     }
 
     return {
@@ -1386,14 +1386,15 @@ _RENDER_ANIMATION_SCRIPT = """\
         }
     }
 
+    opts.renderImgToId = opts.DirectToFile;
+    opts.applyChanges();
+
     var rendered = [];
     var previousFrame = Scene.getFrame();
 
     for (var frame = startFrame; frame <= endFrame; frame++) {
-        // Set frame
         Scene.setFrame(frame);
 
-        // Build output path with zero-padding
         var frameStr = String(frame);
         while (frameStr.length < 4) frameStr = "0" + frameStr;
 
@@ -1404,12 +1405,9 @@ _RENDER_ANIMATION_SCRIPT = """\
         }
         outputPath += filenamePattern + "_" + frameStr + ".png";
 
-        // Set output
-        opts.renderImgToId = 0;
         opts.renderImgFilename = outputPath;
-
-        // Render
-        renderMgr.doRender();
+        opts.applyChanges();
+        renderMgr.doRender(opts);
 
         rendered.push({
             frame: frame,
@@ -1420,9 +1418,9 @@ _RENDER_ANIMATION_SCRIPT = """\
     // Restore previous frame
     Scene.setFrame(previousFrame);
 
-    // Restore previous camera
     if (previousCam) {
         opts.camera = previousCam;
+        opts.applyChanges();
     }
 
     return {
@@ -6394,23 +6392,26 @@ _SET_RENDER_OUTPUT_SCRIPT = """\
     var changed = {};
     if (args.outputPath) {
         opts.renderImgFilename = args.outputPath;
-        opts.renderImgToId = 0;  // 0 = render to file
+        opts.renderImgToId = opts.DirectToFile;
         changed.output_path = args.outputPath;
     }
-    if (args.width !== undefined && args.width !== null) {
-        opts.aspectWidth = args.width;
-        changed.width = args.width;
+    if ((args.width !== undefined && args.width !== null) ||
+        (args.height !== undefined && args.height !== null)) {
+        var sz = opts.imageSize;
+        var w = (args.width !== undefined && args.width !== null) ? args.width : sz.width;
+        var h = (args.height !== undefined && args.height !== null) ? args.height : sz.height;
+        opts.imageSize = new QSize(w, h);
+        if (args.width !== undefined && args.width !== null) changed.width = args.width;
+        if (args.height !== undefined && args.height !== null) changed.height = args.height;
     }
-    if (args.height !== undefined && args.height !== null) {
-        opts.aspectHeight = args.height;
-        changed.height = args.height;
-    }
+    opts.applyChanges();
+    var cur = opts.imageSize;
     return {
         changed: changed,
         current: {
             output_path: opts.renderImgFilename || null,
-            width: opts.aspectWidth || null,
-            height: opts.aspectHeight || null
+            width: cur ? cur.width : null,
+            height: cur ? cur.height : null
         }
     };
 })()
@@ -7022,8 +7023,9 @@ _COPY_MATERIAL_SCRIPT = """\
     if (!srcNode) srcNode = Scene.findNode(srcNodeLabel);
     if (!srcNode) throw new Error("Source node not found: " + srcNodeLabel);
 
-    var srcShape = typeof srcNode.getObject === 'function' ? srcNode.getObject() : null;
-    if (!srcShape) throw new Error("Source node has no geometry: " + srcNodeLabel);
+    var srcObj = typeof srcNode.getObject === 'function' ? srcNode.getObject() : null;
+    var srcShape = srcObj && typeof srcObj.getCurrentShape === 'function' ? srcObj.getCurrentShape() : null;
+    if (!srcShape) throw new Error("Source node has no material shape: " + srcNodeLabel);
 
     var srcMat = null;
     for (var i = 0; i < srcShape.getNumMaterials(); i++) {
@@ -7047,8 +7049,9 @@ _COPY_MATERIAL_SCRIPT = """\
     if (!dstNode) dstNode = Scene.findNode(dstNodeLabel);
     if (!dstNode) throw new Error("Dest node not found: " + dstNodeLabel);
 
-    var dstShape = typeof dstNode.getObject === 'function' ? dstNode.getObject() : null;
-    if (!dstShape) throw new Error("Dest node has no geometry: " + dstNodeLabel);
+    var dstObj = typeof dstNode.getObject === 'function' ? dstNode.getObject() : null;
+    var dstShape = dstObj && typeof dstObj.getCurrentShape === 'function' ? dstObj.getCurrentShape() : null;
+    if (!dstShape) throw new Error("Dest node has no material shape: " + dstNodeLabel);
 
     var dstMat = null;
     for (var j = 0; j < dstShape.getNumMaterials(); j++) {
