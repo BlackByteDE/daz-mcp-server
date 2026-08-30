@@ -1,6 +1,6 @@
 # vangard-daz-mcp
 
-**Version 0.5.0** | MCP Server for DAZ Studio
+**Version 0.5.1** | MCP Server for DAZ Studio
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes DAZ Studio operations to Claude and other MCP clients. Built on [FastMCP](https://github.com/jlowin/fastmcp) and wraps the [DazScriptServer](https://github.com/bluemoonfoundry/daz-script-server) HTTP plugin.
 
