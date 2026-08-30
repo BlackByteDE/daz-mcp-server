@@ -1,7 +1,39 @@
 # CLAUDE.md (Project Index)
 
-Handoff: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`
 Bug-Katalog: `C:\Users\Black-Byte\Development\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
+(Handoff-Notizen für die separate OpenCode-Session: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`)
+
+## Aktueller Stand (2026-08-30)
+
+Version 0.5.0+bb.1 (bisher `0.5.2`, siehe Versionsschema unten) ist
+committed + gepusht (`d754ec7`, `5421aa5`, `origin` =
+`BlackByteDE/daz-mcp-server`). Behebt Bug-Katalog #4, #5, #7, #8, #12 —
+alle live gegen die laufende Daz-Studio-Instanz verifiziert.
+
+**Versionsschema (ab 2026-08-30):** `<upstream-version>+bb.<n>` (PEP 440
+local version identifier). Der Teil vor dem `+` ist die Upstream-Version
+(`bluemoonfoundry/daz-mcp-server`), auf der dieser Fork gerade basiert —
+aktuell `0.5.0`. Der `bb.<n>`-Zähler zählt Fork-eigene Releases
+unabhängig von Upstreams eigener Versionierung hoch, damit es nie zu
+Versionskollisionen kommt. Bei jedem Rebase/Merge von `upstream/master`
+die Basis auf deren neue Version setzen und den Zähler auf `.1`
+zurücksetzen.
+
+**Offen:** `.venv`/`uv.lock` hinken dem gepushten Stand hinterher — `uv
+sync` schlägt fehl, solange der `daz`-MCP-Server (`uv run --project
+D:/Dev/daz-mcp-server vangard-daz-mcp`) läuft und `vangard-daz-mcp.exe`
+sperrt. Nach Neustart der `daz`-MCP-Verbindung `uv sync` nachholen; dabei
+prüfen, ob der lokale `dazpy`-Versionsdrift in `uv.lock` (2.6.0 → 2.9.0)
+so gewollt ist, bevor `uv.lock` committed wird. Der `5421aa5`-Fix
+(`daz_render_with_camera`-Symmetrie) ist bisher nur per Unit-Test
+abgesichert, noch nicht live nachgetestet.
+
+**Hinweis:** Am 2026-08-30 wurden die Commit-Hashes von `f5979b2`,
+`d899adb`, `1bc2069` und `e8165fa` per `filter-branch` + Force-Push neu
+geschrieben (`f40a7bf`, `3925ca7`, `d754ec7`, `5421aa5`), da die beiden
+älteren Commits fälschlich mit Autor "GSH" statt Black-Byte
+protokolliert waren. Alte Hashes aus früheren Notizen/Links sind damit
+ungültig.
 
 ## Primary Commands
 - `uv sync` - Install dependencies

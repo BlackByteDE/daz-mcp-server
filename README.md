@@ -1,8 +1,16 @@
 # vangard-daz-mcp
 
-**Version 0.5.1** | MCP Server for DAZ Studio
+**Version 0.5.0+bb.1** | MCP Server for DAZ Studio
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes DAZ Studio operations to Claude and other MCP clients. Built on [FastMCP](https://github.com/jlowin/fastmcp) and wraps the [DazScriptServer](https://github.com/bluemoonfoundry/daz-script-server) HTTP plugin.
+
+---
+
+## About This Fork
+
+This is [BlackByteDE](https://github.com/BlackByteDE)'s fork of [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server). It exists because real production use — automating toon-shader (Filament-style) renders of Genesis 8 characters — turned up several concrete bugs in the render and material tools that blocked that workflow: render-to-file settings silently not persisting, the render engine being unreadable/unsettable via script, material color channels returning `null` instead of their real value, and morphs living in the modifier stack not being found at all. Fixes for these are tracked in [CHANGELOG.md](CHANGELOG.md).
+
+Fork releases are versioned `<upstream-version>+bb.<n>` (e.g. `0.5.0+bb.1`) so they never collide with upstream's own version numbers — see [CHANGELOG.md](CHANGELOG.md) for details and the fix history.
 
 ---
 
