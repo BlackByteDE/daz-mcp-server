@@ -1310,6 +1310,18 @@ _RENDER_WITH_CAMERA_SCRIPT = """\
     }
     opts.renderImgToId = opts.DirectToFile;
     opts.renderImgFilename = path;
+    try {
+        var helper = renderMgr.getOptionHelper();
+        if (helper) {
+            var slash = Math.max(String(path).lastIndexOf("/"), String(path).lastIndexOf("\\\\"));
+            var dir = slash >= 0 ? String(path).substring(0, slash) : "";
+            var name = slash >= 0 ? String(path).substring(slash + 1) : String(path);
+            var np = helper.findProperty("Image Name");
+            var pp = helper.findProperty("Image Path");
+            if (np && typeof np.setValue === "function") np.setValue(name);
+            if (pp && typeof pp.setValue === "function") pp.setValue(dir);
+        }
+    } catch (e) {}
     opts.applyChanges();
     if (Number(opts.renderImgToId) !== Number(opts.DirectToFile) || !opts.renderImgFilename) {
         throw new Error("Render-to-file did not persist (renderImgToId=" + opts.renderImgToId + ", file=" + opts.renderImgFilename + ")");

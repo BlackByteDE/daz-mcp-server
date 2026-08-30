@@ -26,6 +26,14 @@ def test_render_script_requires_output_path_before_dorender():
     assert script.index("if (!path)") < script.index("doRender(opts)")
 
 
+def test_render_and_render_with_camera_both_sync_option_helper_path():
+    for script_id in ("vangard-render", "vangard-render-with-camera"):
+        script = _REGISTRY[script_id][1]
+        assert "getOptionHelper" in script, script_id
+        assert 'findProperty("Image Name")' in script, script_id
+        assert 'findProperty("Image Path")' in script, script_id
+
+
 def test_set_render_output_uses_image_size():
     script = _REGISTRY["vangard-set-render-output"][1]
     assert "opts.imageSize" in script
