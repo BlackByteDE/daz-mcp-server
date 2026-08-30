@@ -20,6 +20,12 @@ def test_render_scripts_use_direct_to_file_not_zero():
             assert "doRender(opts)" in script, script_id
 
 
+def test_render_script_requires_output_path_before_dorender():
+    script = _REGISTRY["vangard-render"][1]
+    assert "Render output path is not set" in script
+    assert script.index("if (!path)") < script.index("doRender(opts)")
+
+
 def test_set_render_output_uses_image_size():
     script = _REGISTRY["vangard-set-render-output"][1]
     assert "opts.imageSize" in script
@@ -31,3 +37,22 @@ def test_get_render_settings_reports_image_size():
     script = _REGISTRY["vangard-get-render-settings"][1]
     assert "opts.imageSize" in script
     assert "opts.DirectToFile" in script
+    assert "opts.renderType" in script
+
+
+def test_get_render_settings_reports_engine_via_render_type():
+    script = _REGISTRY["vangard-get-render-settings"][1]
+    assert "opts.renderType" in script
+    assert "opts.ScreenShot" in script
+    assert "opts.HardwareAssisted" in script
+    assert "opts.Software" in script
+    assert "getActiveRenderer" in script
+
+
+def test_set_render_engine_uses_render_type_not_renderer_count():
+    script = _REGISTRY["vangard-set-render-engine"][1]
+    assert "opts.renderType = opts.ScreenShot" in script
+    assert "opts.renderType = opts.HardwareAssisted" in script
+    assert "opts.renderType = opts.Software" in script
+    assert "opts.applyChanges()" in script
+    assert "getNumRenderers" not in script

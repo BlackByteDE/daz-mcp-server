@@ -81,9 +81,26 @@ _GET_NODE_SCRIPT = """\
     if (!n) n = Scene.findNode(args.nodeLabel);
     if (!n) throw new Error("Node not found: " + args.nodeLabel);
     var props = {};
-    for (var p = 0; p < n.getNumProperties(); p++) {
-        var pr = n.getProperty(p);
-        if (pr.inherits("DzNumericProperty")) props[pr.getLabel()] = pr.getValue();
+    var seen = {};
+    function addNumeric(pr) {
+        if (!pr || !pr.inherits("DzNumericProperty")) return;
+        var key = pr.getName();
+        if (seen[key]) return;
+        seen[key] = true;
+        props[pr.getLabel()] = pr.getValue();
+    }
+    var p;
+    for (p = 0; p < n.getNumProperties(); p++) addNumeric(n.getProperty(p));
+    var obj = (typeof n.getObject === "function") ? n.getObject() : null;
+    if (obj && typeof obj.getNumModifiers === "function") {
+        for (p = 0; p < obj.getNumModifiers(); p++) {
+            var m = obj.getModifier(p);
+            if (!m) continue;
+            if (typeof m.getValueChannel === "function") addNumeric(m.getValueChannel());
+            if (typeof m.getNumProperties === "function") {
+                for (var j = 0; j < m.getNumProperties(); j++) addNumeric(m.getProperty(j));
+            }
+        }
     }
     return { name: n.getName(), label: n.getLabel(), type: n.className(), properties: props };
 })()
@@ -98,15 +115,37 @@ _SET_PROPERTY_SCRIPT = """\
     var n = Scene.findNodeByLabel(args.nodeLabel);
     if (!n) n = Scene.findNode(args.nodeLabel);
     if (!n) throw new Error("Node not found: " + args.nodeLabel);
-    var prop = null;
-    for (var p = 0; p < n.getNumProperties(); p++) {
-        var pr = n.getProperty(p);
-        if (pr.getLabel() === args.propertyName || pr.getName() === args.propertyName) {
-            prop = pr; break;
-        }
+    function matchName(item, name) {
+        return item.getLabel() === name || item.getName() === name;
     }
+    function findProp(node, name) {
+        var i, pr, obj, m, ch, j;
+        for (i = 0; i < node.getNumProperties(); i++) {
+            pr = node.getProperty(i);
+            if (matchName(pr, name)) return pr;
+        }
+        obj = (typeof node.getObject === "function") ? node.getObject() : null;
+        if (!obj || typeof obj.getNumModifiers !== "function") return null;
+        for (i = 0; i < obj.getNumModifiers(); i++) {
+            m = obj.getModifier(i);
+            if (!m) continue;
+            if (matchName(m, name) && typeof m.getValueChannel === "function") {
+                ch = m.getValueChannel();
+                if (ch) return ch;
+            }
+            if (typeof m.getNumProperties === "function") {
+                for (j = 0; j < m.getNumProperties(); j++) {
+                    pr = m.getProperty(j);
+                    if (matchName(pr, name)) return pr;
+                }
+            }
+        }
+        return null;
+    }
+    var prop = findProp(n, args.propertyName);
     if (!prop) throw new Error("Property not found: " + args.propertyName + " on " + args.nodeLabel);
     if (!prop.inherits("DzNumericProperty")) throw new Error("Property is not numeric: " + args.propertyName);
+    if (typeof prop.lock === "function" && prop.isLocked && prop.isLocked()) prop.lock(false);
     prop.setValue(args.value);
     return { node: n.getLabel(), property: prop.getLabel(), value: prop.getValue() };
 })()
@@ -120,13 +159,30 @@ _RENDER_SCRIPT = """\
     var args = getArguments()[0] || {};
     var renderMgr = App.getRenderMgr();
     var opts = renderMgr.getRenderOptions();
-    if (args.outputPath) {
-        opts.renderImgToId = opts.DirectToFile;
-        opts.renderImgFilename = args.outputPath;
-        opts.applyChanges();
+    var path = args.outputPath || opts.renderImgFilename;
+    if (!path) {
+        throw new Error("Render output path is not set. Pass output_path or call daz_set_render_output first — otherwise Studio opens a filename dialog.");
+    }
+    opts.renderImgToId = opts.DirectToFile;
+    opts.renderImgFilename = path;
+    try {
+        var helper = renderMgr.getOptionHelper();
+        if (helper) {
+            var slash = Math.max(String(path).lastIndexOf("/"), String(path).lastIndexOf("\\\\"));
+            var dir = slash >= 0 ? String(path).substring(0, slash) : "";
+            var name = slash >= 0 ? String(path).substring(slash + 1) : String(path);
+            var np = helper.findProperty("Image Name");
+            var pp = helper.findProperty("Image Path");
+            if (np && typeof np.setValue === "function") np.setValue(name);
+            if (pp && typeof pp.setValue === "function") pp.setValue(dir);
+        }
+    } catch (e) {}
+    opts.applyChanges();
+    if (Number(opts.renderImgToId) !== Number(opts.DirectToFile) || !opts.renderImgFilename) {
+        throw new Error("Render-to-file did not persist (renderImgToId=" + opts.renderImgToId + ", file=" + opts.renderImgFilename + ")");
     }
     renderMgr.doRender(opts);
-    return { success: true };
+    return { success: true, outputPath: opts.renderImgFilename };
 })()
 """
 
@@ -1248,11 +1304,16 @@ _RENDER_WITH_CAMERA_SCRIPT = """\
     // Set render camera
     opts.camera = cam;
 
-    if (args.outputPath) {
-        opts.renderImgToId = opts.DirectToFile;
-        opts.renderImgFilename = args.outputPath;
+    var path = args.outputPath || opts.renderImgFilename;
+    if (!path) {
+        throw new Error("Render output path is not set. Pass output_path or call daz_set_render_output first — otherwise Studio opens a filename dialog.");
     }
+    opts.renderImgToId = opts.DirectToFile;
+    opts.renderImgFilename = path;
     opts.applyChanges();
+    if (Number(opts.renderImgToId) !== Number(opts.DirectToFile) || !opts.renderImgFilename) {
+        throw new Error("Render-to-file did not persist (renderImgToId=" + opts.renderImgToId + ", file=" + opts.renderImgFilename + ")");
+    }
     renderMgr.doRender(opts);
 
     if (previousCam) {
@@ -1285,6 +1346,20 @@ _GET_RENDER_SETTINGS_SCRIPT = """\
     var rendersToFile = Number(opts.renderImgToId) === directToFile;
 
     var sz = opts.imageSize;
+    var renderType = Number(opts.renderType);
+    var engine = "other";
+    var renderTypeName = null;
+    if (renderType === Number(opts.ScreenShot)) {
+        engine = "viewport";
+        renderTypeName = "ScreenShot";
+    } else if (renderType === Number(opts.HardwareAssisted)) {
+        engine = "multi_pass_opengl";
+        renderTypeName = "HardwareAssisted";
+    } else if (renderType === Number(opts.Software)) {
+        engine = "iray";
+        renderTypeName = "Software";
+    }
+    var active = renderMgr.getActiveRenderer();
     var result = {
         renderToFile: rendersToFile,
         outputPath: rendersToFile ? opts.renderImgFilename : null,
@@ -1292,8 +1367,16 @@ _GET_RENDER_SETTINGS_SCRIPT = """\
         aspectWidth: opts.aspectWidth,
         aspectHeight: opts.aspectHeight,
         width: sz ? sz.width : null,
-        height: sz ? sz.height : null
+        height: sz ? sz.height : null,
+        engine: engine,
+        renderType: renderType,
+        renderTypeName: renderTypeName,
+        activeRenderer: active ? active.getName() : null,
+        activeRendererClass: active ? active.className() : null
     };
+    if (engine === "viewport") {
+        result.warning = "Engine Viewport opens a filename dialog unless DirectToFile + output path are set.";
+    }
 
     // Get current render camera
     if (opts.camera) {
@@ -6054,17 +6137,53 @@ _GET_MATERIAL_SCRIPT = """\
         }
     }
     if (!mat) throw new Error("Material not found: " + args.materialName);
-    function toHex(n) { return ("0" + Math.round(n).toString(16)).slice(-2); }
+    function toHex(n) {
+        var v = Math.round(n);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        return ("0" + v.toString(16)).slice(-2);
+    }
+    function colorChannel(col, name) {
+        if (!col) return 0;
+        var v = col[name];
+        if (typeof v === "function") v = v.call(col);
+        return v;
+    }
+    function colorToHex(col) {
+        if (!col) return null;
+        var r = colorChannel(col, "red");
+        var g = colorChannel(col, "green");
+        var b = colorChannel(col, "blue");
+        if (r <= 1 && g <= 1 && b <= 1) {
+            r *= 255; g *= 255; b *= 255;
+        }
+        return "#" + toHex(r) + toHex(g) + toHex(b);
+    }
+    function readColorProp(prop) {
+        try {
+            if (typeof prop.getFloatColorValue === "function") {
+                var fc = prop.getFloatColorValue();
+                if (fc && typeof fc.getColor === "function") {
+                    var qc = fc.getColor();
+                    if (qc) return colorToHex(qc);
+                }
+                if (fc) return colorToHex(fc);
+            }
+        } catch (e1) {}
+        try {
+            if (typeof prop.getColorValue === "function") {
+                return colorToHex(prop.getColorValue());
+            }
+        } catch (e2) {}
+        return null;
+    }
     var props = [];
     for (var p = 0; p < mat.getNumProperties(); p++) {
         var prop = mat.getProperty(p);
         var entry = { name: prop.getName(), label: prop.getLabel(), type: "unknown", value: null };
-        if (prop.inherits("DzColorProperty")) {
+        if (prop.inherits("DzColorProperty") || prop.inherits("DzFloatColorProperty")) {
             entry.type = "color";
-            try {
-                var col = prop.getColorValue();
-                entry.value = "#" + toHex(col.red()) + toHex(col.green()) + toHex(col.blue());
-            } catch(e) { entry.value = null; }
+            entry.value = readColorProp(prop);
         } else if (prop.inherits("DzNumericProperty")) {
             entry.type = "numeric";
             entry.value = prop.getValue();
@@ -6142,26 +6261,41 @@ _SET_MORPH_SCRIPT = """\
     if (!node) node = Scene.findNode(args.nodeLabel);
     if (!node) throw new Error("Node not found: " + args.nodeLabel);
     var search = (args.morphName || "").toLowerCase();
+    var channels = [];
+    function addChannel(p) {
+        if (p && p.inherits("DzNumericProperty")) channels.push(p);
+    }
+    var i, p, obj, m, j;
+    for (i = 0; i < node.getNumProperties(); i++) addChannel(node.getProperty(i));
+    obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (obj && typeof obj.getNumModifiers === "function") {
+        for (i = 0; i < obj.getNumModifiers(); i++) {
+            m = obj.getModifier(i);
+            if (!m) continue;
+            if (typeof m.getValueChannel === "function") addChannel(m.getValueChannel());
+            if (typeof m.getNumProperties === "function") {
+                for (j = 0; j < m.getNumProperties(); j++) addChannel(m.getProperty(j));
+            }
+        }
+    }
     var prop = null;
-    // Exact label or name match first
-    for (var i = 0; i < node.getNumProperties(); i++) {
-        var p = node.getProperty(i);
-        if (!p.inherits("DzNumericProperty")) continue;
+    for (i = 0; i < channels.length; i++) {
+        p = channels[i];
         if (p.getLabel().toLowerCase() === search || p.getName().toLowerCase() === search) {
             prop = p; break;
         }
     }
-    // Substring fallback
     if (!prop) {
-        for (var i = 0; i < node.getNumProperties(); i++) {
-            var p = node.getProperty(i);
-            if (!p.inherits("DzNumericProperty")) continue;
-            if (p.getLabel().toLowerCase().indexOf(search) !== -1) {
+        for (i = 0; i < channels.length; i++) {
+            p = channels[i];
+            if (p.getLabel().toLowerCase().indexOf(search) !== -1 ||
+                p.getName().toLowerCase().indexOf(search) !== -1) {
                 prop = p; break;
             }
         }
     }
     if (!prop) throw new Error("Morph not found: " + args.morphName);
+    if (typeof prop.lock === "function" && prop.isLocked && prop.isLocked()) prop.lock(false);
     prop.setValue(args.value);
     return {
         node: node.getLabel(),
@@ -6414,6 +6548,68 @@ _SET_RENDER_OUTPUT_SCRIPT = """\
             height: cur ? cur.height : null
         }
     };
+})()
+"""
+
+# args: {engine}
+# Returns: {success, engine, renderType, renderTypeName, activeRenderer, activeRendererClass, warning?}
+# DS6 Engine dropdown is DzRenderOptions.renderType, not getActiveRenderer().
+_SET_RENDER_ENGINE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var requested = String(args.engine || "").toLowerCase().replace(/-/g, "_").replace(/ /g, "_");
+    if (requested === "opengl" || requested === "hardware" || requested === "hardware_assisted") {
+        requested = "multi_pass_opengl";
+    }
+    if (requested === "nvidia_iray" || requested === "nvidia_iray_mdl" || requested === "software") {
+        requested = "iray";
+    }
+    if (requested !== "iray" && requested !== "multi_pass_opengl" && requested !== "viewport") {
+        throw new Error("Unknown render engine: " + args.engine + ". Use iray, multi_pass_opengl, or viewport.");
+    }
+
+    var mgr = App.getRenderMgr();
+    var opts = mgr.getRenderOptions();
+    if (requested === "viewport") {
+        opts.renderType = opts.ScreenShot;
+    } else if (requested === "multi_pass_opengl") {
+        opts.renderType = opts.HardwareAssisted;
+    } else {
+        var iray = mgr.findRenderer("DzIrayRenderer");
+        if (!iray) throw new Error("DzIrayRenderer is not registered");
+        mgr.setActiveRenderer(iray);
+        opts.renderType = opts.Software;
+    }
+    opts.applyChanges();
+    try {
+        var pane = MainWindow.getPaneMgr().findPane("DzRenderSettingsPane");
+        if (pane && pane.refresh) pane.refresh();
+    } catch (e) {}
+
+    var renderType = Number(opts.renderType);
+    var engine = requested;
+    var renderTypeName = renderType === Number(opts.ScreenShot) ? "ScreenShot"
+        : renderType === Number(opts.HardwareAssisted) ? "HardwareAssisted"
+        : renderType === Number(opts.Software) ? "Software" : null;
+    var expected = requested === "viewport" ? Number(opts.ScreenShot)
+        : requested === "multi_pass_opengl" ? Number(opts.HardwareAssisted)
+        : Number(opts.Software);
+    if (renderType !== expected) {
+        throw new Error("Render engine readback mismatch: wanted " + requested + " got renderType " + renderType);
+    }
+    var active = mgr.getActiveRenderer();
+    var result = {
+        success: true,
+        engine: engine,
+        renderType: renderType,
+        renderTypeName: renderTypeName,
+        activeRenderer: active ? active.getName() : null,
+        activeRendererClass: active ? active.className() : null
+    };
+    if (engine === "viewport") {
+        result.warning = "Engine Viewport opens a filename dialog unless DirectToFile + output path are set.";
+    }
+    return result;
 })()
 """
 
@@ -7709,6 +7905,10 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-set-render-output": (
         "Set render output filename path and/or image dimensions (width x height)",
         _SET_RENDER_OUTPUT_SCRIPT,
+    ),
+    "vangard-set-render-engine": (
+        "Set DS6 render engine via DzRenderOptions.renderType (iray / multi_pass_opengl / viewport)",
+        _SET_RENDER_ENGINE_SCRIPT,
     ),
     # Phase 5: Pose reset
     "vangard-reset-pose": (
