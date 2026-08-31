@@ -7104,6 +7104,26 @@ _APPLY_MATERIAL_PRESET_SCRIPT = """\
         }
     }
 
+    var mapPaths = args.mapPaths || [];
+    var allowMissing = args.allowMissing === true;
+    var missing = [];
+    var mi, rel, absPath, info;
+    for (mi = 0; mi < mapPaths.length; mi++) {
+        rel = mapPaths[mi];
+        if (!rel) continue;
+        info = new DzFileInfo(rel);
+        if (info && typeof info.exists === "function" && info.exists()) continue;
+        absPath = App.getContentMgr().getAbsolutePath(rel, true, "");
+        if (absPath) {
+            info = new DzFileInfo(absPath);
+            if (info && typeof info.exists === "function" && info.exists()) continue;
+        }
+        missing.push(rel);
+    }
+    if (missing.length && !allowMissing) {
+        throw new Error("Missing texture files (refusing openFile to avoid Missing Files dialog): " + missing.join(", "));
+    }
+
     var ioSettings = new DzFileIOSettings();
     var ok = App.getContentMgr().openFile(presetPath, ioSettings, false);
     if (!ok) throw new Error("Failed to apply material preset. Check that the path exists and is a valid .duf material file: " + presetPath);
