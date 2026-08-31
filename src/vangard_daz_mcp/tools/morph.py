@@ -7,7 +7,7 @@ from typing import Any
 from fastmcp.exceptions import ToolError
 
 from .._mcp import mcp, _execute_by_id, _execute
-from .._client import get_scene, get_daz_client, run_dazpy
+from .._client import get_daz_client, run_dazpy
 from .._emotions import _EMOTION_DEFINITIONS
 from .._errors import handle_dazpy_error
 
@@ -230,32 +230,10 @@ async def daz_set_morph(
         - Use daz_search_morphs to browse available morph names before setting.
         - daz_set_property also works but requires the exact internal property name.
     """
-    def _run() -> dict:
-        from dazpy import DazMorph
-        scene = get_scene()
-        node = scene.find_node_by_label(node_label)
-        # Try by label first, then by internal name
-        modifier = node.find_modifier_by_label(morph_name)
-        if modifier is None:
-            modifier = node.find_modifier(morph_name)
-        if modifier is None:
-            raise ToolError(
-                f"Morph not found: {morph_name!r} on node {node_label!r}. "
-                "Use daz_search_morphs to find available morph names."
-            )
-        if not isinstance(modifier, DazMorph):
-            raise ToolError(
-                f"{morph_name!r} exists on {node_label!r} but is not a morph modifier."
-            )
-        modifier.value = float(value)
-        return {"success": True, "node": node_label, "morph": morph_name, "value": value}
-
-    try:
-        return await run_dazpy(_run)
-    except ToolError:
-        raise
-    except Exception as e:
-        handle_dazpy_error(e)
+    return await _execute_by_id(
+        "vangard-set-morph",
+        {"nodeLabel": node_label, "morphName": morph_name, "value": value},
+    )
 
 
 @mcp.tool()

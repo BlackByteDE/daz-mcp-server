@@ -1,5 +1,8 @@
 # CLAUDE.md (Project Index)
 
+Handoff: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`
+Bug-Katalog: `C:\Users\Black-Byte\Development\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
+
 ## Primary Commands
 - `uv sync` - Install dependencies
 - `uv run pytest tests/ -v` - Run all tests

@@ -98,15 +98,33 @@ created with `new DzBasicCamera()` (or loaded from a `.duf`) appear in `Scene.ge
 Always handle `camera_count == 0` as a valid state.
 
 ### Keyframe animation — correct API
+Time is in **ticks**, not frames: `var time = frame * Scene.getTimeStep();`
+
 ```javascript
 // DzFloatProperty (camera controls, morph/transform props): two-arg setValue = keyframe
-prop.setValue(frame, value);     // creates a keyframe at the given frame number
+prop.setValue(time, value);      // creates/overwrites a key at that time (ticks)
 prop.setValue(value);            // one-arg: sets current value, NO keyframe
 
 // DzNumericProperty subclass (props from findProperty on figures):
-prop.setDoubleValue(frame, value);  // two-arg form = keyframe
+prop.setDoubleValue(time, value);  // two-arg form = keyframe
+
+// READ
+prop.getNumKeys();
+prop.getKeyTime(i);              // ticks
+prop.getKeyValue(i);
+
+// UPDATE existing key by index — never creates a new key
+prop.setKeyValue(i, value);
+
+// DELETE one key (range start==end). deleteKey() does not exist.
+prop.deleteKeys(time, time);
+
+// DELETE ALL keys on this property — not a substitute for single-key delete
+prop.deleteAllKeys();
 
 // BROKEN: prop.setKeyFrame(frame, value) — does not exist on any property class
+// BROKEN: prop.getKeyFrame(index)        — use getKeyTime(i)
+// BROKEN: prop.deleteKey(index)          — use deleteKeys(time, time)
 // BROKEN: prop.setKey(frame, value)      — does not exist on any property class
 // BROKEN: prop.getAnimation()            — does not exist
 ```
@@ -114,14 +132,15 @@ prop.setDoubleValue(frame, value);  // two-arg form = keyframe
 ### Camera controls — always use dedicated control accessors (DzBasicCamera)
 Never use `findProperty("Focal Length")` etc. on cameras. Use the typed control methods defined
 in `DzBasicCamera` — they always return a `DzFloatProperty` / `DzBoolProperty` you can
-call `.setValue()` / `.setKey()` on:
+call `.setValue()` on:
 
 ```javascript
+var time = frame * Scene.getTimeStep();
 camera.getDepthOfFieldControl().setBoolValue(true);   // enable DOF (DzBoolProperty)
 camera.getFocalDistanceControl().setValue(200);        // focal distance in cm
-camera.getFocalDistanceControl().setKey(frame, 200);  // keyframe focal distance
+camera.getFocalDistanceControl().setValue(time, 200);  // keyframe focal distance
 camera.getFocalLengthControl().setValue(85);           // focal length in mm
-camera.getFocalLengthControl().setKey(frame, 85);     // keyframe focal length
+camera.getFocalLengthControl().setValue(time, 85);     // keyframe focal length
 camera.getFStopControl().setValue(2.8);               // aperture / F-stop
 camera.getFocalPointScaleControl().setValue(1.0);     // focal point scale
 
