@@ -343,6 +343,12 @@ async def test_daz_load_file_not_found(mock_scene):
         await daz_load_file("C:/missing.duf")
 
 
+async def test_daz_load_file_bvh_refuses_blocking_importer(mock_scene):
+    with pytest.raises(ToolError, match="BVH cannot be loaded via daz_load_file"):
+        await daz_load_file("C:/anims/walk.bvh")
+    mock_scene.load.assert_not_called()
+
+
 async def test_daz_load_file_obj_uses_silent_importer(mock_daz, mock_scene):
     mock_daz.post("/scripts/vangard-import-obj/execute").mock(
         return_value=_ok({"success": True, "file": "C:/assets/hat.obj", "scale": 1.0})
