@@ -6882,50 +6882,39 @@ _SET_DFORCE_PROPERTY_SCRIPT = """\
     if (!node) node = Scene.findNode(nodeLabel);
     if (!node) throw new Error("Node not found: " + nodeLabel);
 
-    var modifier = null;
-
-    // Search node-level modifiers first
-    if (typeof node.getNumModifiers === 'function') {
-        for (var i = 0; i < node.getNumModifiers(); i++) {
-            var mod = node.getModifier(i);
-            if (mod) {
-                var cn = mod.className ? mod.className() : "";
-                if (cn.toLowerCase().indexOf("dforce") !== -1 || cn.toLowerCase().indexOf("dynamics") !== -1) {
-                    modifier = mod;
-                    break;
-                }
-            }
+    function isDforceMod(mod) {
+        if (!mod) return false;
+        var cn = (mod.className ? mod.className() : "").toLowerCase();
+        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
+        if (typeof mod.findProperty === "function") {
+            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
         }
+        return false;
     }
-
-    // Fall back to shape-level modifiers
-    if (!modifier && typeof node.getObject === 'function') {
-        var obj = node.getObject();
-        if (obj) {
-            var shape = obj.getCurrentShape ? obj.getCurrentShape() : null;
-            if (shape && typeof shape.getNumModifiers === 'function') {
-                for (var j = 0; j < shape.getNumModifiers(); j++) {
-                    var mod2 = shape.getModifier(j);
-                    if (mod2) {
-                        var cn2 = mod2.className ? mod2.className() : "";
-                        if (cn2.toLowerCase().indexOf("dforce") !== -1 || cn2.toLowerCase().indexOf("dynamics") !== -1) {
-                            modifier = mod2;
-                            break;
-                        }
-                    }
-                }
-            }
+    function searchMods(host) {
+        if (!host || typeof host.getNumModifiers !== "function") return null;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (isDforceMod(mod)) return mod;
         }
+        return null;
     }
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
+    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
 
     if (!modifier) {
         var nodeModNames = [];
-        if (typeof node.getNumModifiers === 'function') {
-            for (var nm = 0; nm < node.getNumModifiers(); nm++) {
-                var m = node.getModifier(nm);
-                if (m) nodeModNames.push(m.className ? m.className() : "unknown");
+        function collectMods(host, prefix) {
+            if (!host || typeof host.getNumModifiers !== "function") return;
+            for (var nm = 0; nm < host.getNumModifiers(); nm++) {
+                var m = host.getModifier(nm);
+                nodeModNames.push(prefix + (m && m.className ? m.className() : "unknown"));
             }
         }
+        collectMods(node, "node:");
+        collectMods(obj, "obj:");
+        collectMods(shape, "shape:");
         throw new Error("No dForce modifier found on '" + nodeLabel + "'. Node modifiers: [" + nodeModNames.join(", ") + "]");
     }
 
@@ -7499,30 +7488,56 @@ _EXPORT_SCENE_SCRIPT = """\
     var exportMgr = App.getExportMgr();
     if (!exportMgr) throw new Error("DzExportMgr not available in this version of DAZ Studio.");
 
-    // Build IO settings
-    var settings = new DzFileIOSettings();
-    settings.setBoolValue("SelectedOnly", true);
-    settings.setBoolValue("Morphs", includeMorphs);
-    settings.setBoolValue("Pose", applyCurrentPose);
-    settings.setFloatValue("Scale", scaleFactor);
-
-    // Attempt export; doExport returns true on success
-    var ok = exportMgr.doExport(outputPath, format, settings);
-
-    if (!ok) {
-        // List available exporters for a helpful error message
-        var available = [];
-        var numExp = typeof exportMgr.getNumExporters === 'function' ? exportMgr.getNumExporters() : 0;
+    var exporter = typeof exportMgr.findExporter === "function" ? exportMgr.findExporter(outputPath) : null;
+    if (!exporter) {
+        var numExp = typeof exportMgr.getNumExporters === "function" ? exportMgr.getNumExporters() : 0;
         for (var k = 0; k < numExp; k++) {
-            var exp = exportMgr.getExporter(k);
-            if (exp && typeof exp.getDescription === 'function') {
-                available.push(exp.getDescription());
+            var cand = exportMgr.getExporter(k);
+            if (!cand) continue;
+            var desc = typeof cand.getDescription === "function" ? cand.getDescription() : "";
+            var cn = cand.className ? cand.className() : "";
+            if (desc === format ||
+                (format === "Filmbox" && cn === "DzFbxExporter") ||
+                (format === "Wavefront Object" && cn === "DzObjExporter")) {
+                exporter = cand;
+                break;
+            }
+        }
+    }
+    if (!exporter || typeof exporter.writeFile !== "function") {
+        var available = [];
+        var numExp2 = typeof exportMgr.getNumExporters === "function" ? exportMgr.getNumExporters() : 0;
+        for (var k2 = 0; k2 < numExp2; k2++) {
+            var exp2 = exportMgr.getExporter(k2);
+            if (exp2 && typeof exp2.getDescription === "function") {
+                available.push(exp2.getDescription());
             }
         }
         var hint = available.length > 0
             ? " Available exporters: " + available.join(", ") + "."
             : " No exporters found — the required DAZ Studio exporter plugin may not be installed.";
-        throw new Error("Export to '" + format + "' failed." + hint);
+        throw new Error("Exporter for '" + format + "' not found." + hint);
+    }
+
+    var settings = new DzFileIOSettings();
+    if (typeof exporter.getDefaultOptions === "function") exporter.getDefaultOptions(settings);
+    settings.setIntValue("RunSilent", 1);
+    settings.setFloatValue("Scale", scaleFactor);
+    settings.setBoolValue("SelectedOnly", true);
+    settings.setBoolValue("SelectedRootsOnly", nodeLabels.length > 0);
+    settings.setBoolValue("IncludeSelectedOnly", true);
+    settings.setBoolValue("Morphs", includeMorphs);
+    settings.setBoolValue("IncludeMorphs", includeMorphs);
+    settings.setBoolValue("Pose", applyCurrentPose);
+    settings.setBoolValue("IncludeAnimations", applyCurrentPose);
+    settings.setBoolValue("IncludeFigures", true);
+    settings.setBoolValue("IncludeProps", true);
+
+    var err = exporter.writeFile(outputPath, settings);
+    var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;
+    if (errCode) {
+        var errMsg = (typeof getErrorMessage === "function") ? getErrorMessage(errCode) : ("" + errCode);
+        throw new Error("Export to '" + format + "' failed (" + errCode + "): " + errMsg);
     }
 
     return {
@@ -7534,6 +7549,44 @@ _EXPORT_SCENE_SCRIPT = """\
         include_morphs: includeMorphs,
         apply_current_pose: applyCurrentPose,
         scale_factor: scaleFactor
+    };
+})()
+"""
+
+_IMPORT_OBJ_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var filePath = args.filePath;
+    var scaleFactor = args.scaleFactor !== undefined ? parseFloat(args.scaleFactor) : 1.0;
+    if (!filePath) throw new Error("filePath is required");
+
+    var importMgr = App.getImportMgr();
+    if (!importMgr) throw new Error("DzImportMgr not available in this version of DAZ Studio.");
+    var importer = typeof importMgr.findImporter === "function" ? importMgr.findImporter(filePath) : null;
+    if (!importer && typeof importMgr.findImporterByClassName === "function") {
+        importer = importMgr.findImporterByClassName("DzObjImporter");
+    }
+    if (!importer || typeof importer.readFile !== "function") {
+        throw new Error("OBJ importer not available for: " + filePath);
+    }
+
+    var settings = new DzFileIOSettings();
+    if (typeof importer.getDefaultOptions === "function") importer.getDefaultOptions(settings);
+    settings.setFloatValue("Scale", scaleFactor);
+    settings.setIntValue("RunSilent", 1);
+
+    var err = importer.readFile(filePath, settings);
+    var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;
+    if (errCode) {
+        var errMsg = (typeof getErrorMessage === "function") ? getErrorMessage(errCode) : ("" + errCode);
+        throw new Error("OBJ import failed (" + errCode + "): " + errMsg);
+    }
+
+    return {
+        success: true,
+        file: filePath,
+        scale: scaleFactor,
+        silent: true
     };
 })()
 """
@@ -7989,6 +8042,10 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-export-scene": (
         "Export selected nodes to FBX or OBJ via DzExportMgr",
         _EXPORT_SCENE_SCRIPT,
+    ),
+    "vangard-import-obj": (
+        "Import a Wavefront OBJ with Scale=1 and RunSilent (no options dialog)",
+        _IMPORT_OBJ_SCRIPT,
     ),
 }
 

@@ -298,7 +298,7 @@ async def daz_export_fbx(
     """Export scene nodes to an FBX file via DAZ Studio's Filmbox exporter.
 
     Selects the specified nodes (or all scene nodes if none are given) and
-    calls ``DzExportMgr.doExport`` with the ``"Filmbox"`` exporter.  Returns a
+    calls ``DzExporter.writeFile`` with the Filmbox exporter.  Returns a
     graceful error if the FBX exporter plugin is not installed in DAZ Studio.
 
     FBX is the standard interchange format for game engines (Unreal, Unity) and
@@ -355,7 +355,7 @@ async def daz_export_obj(
     """Export scene nodes to a Wavefront OBJ file via DAZ Studio's OBJ exporter.
 
     Selects the specified nodes (or all scene nodes if none are given) and
-    calls ``DzExportMgr.doExport`` with the ``"Wavefront Object"`` exporter.
+    calls ``DzExporter.writeFile`` with the Wavefront OBJ exporter.
     Returns a graceful error if the OBJ exporter plugin is not installed.
 
     OBJ is a widely supported geometry-only format suitable for Blender,
