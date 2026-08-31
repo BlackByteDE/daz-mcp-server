@@ -7,7 +7,7 @@ Rules for writing DazScript for DAZ Studio 4.24+.
 
 ## Scripting Rules
 - **No Bare Returns:** Wrap in IIFE: `(function(){ return {foo:42}; })()`.
-- **Node Finding:** Prefer `Scene.findNodeByLabel(label)` (unique) over `findNode`.
+- **Node Finding:** Labels are **not** unique (e.g. two `Hip` nodes). Prefer `Scene.findNodeByElementID(id)`, or `parent.findNodeChildByLabel(label, true)`. `findNodeByLabel` returns the first match only.
 - **Creation:** Use `new DzBasicCamera()` or `new DzSpotLight()`. Do NOT use UI Actions/Menus.
 - **Coordinate System:** Genesis figures face **+Z** (Front).
 - **Element ID:** `node.elementID` is a property, not a method.

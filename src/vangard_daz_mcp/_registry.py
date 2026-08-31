@@ -34,6 +34,50 @@ async def _register_scripts(client: httpx.AsyncClient) -> None:
 #   MainWindow – the main window
 # ---------------------------------------------------------------------------
 
+_RESOLVE_NODE_JS = """\
+    function resolveNode(id) {
+        if (id === undefined || id === null || String(id) === "") {
+            throw new Error("Node id is required");
+        }
+        var s = String(id);
+        if (/^[0-9]+$/.test(s) && typeof Scene.findNodeByElementID === "function") {
+            var byId = Scene.findNodeByElementID(parseInt(s, 10));
+            if (!byId) throw new Error("Node not found: elementID " + s);
+            return byId;
+        }
+        var slash = s.lastIndexOf("/");
+        if (slash > 0) {
+            var parent = resolveNode(s.substring(0, slash));
+            var childPart = s.substring(slash + 1);
+            var child = null;
+            if (typeof parent.findNodeChildByLabel === "function") {
+                child = parent.findNodeChildByLabel(childPart, true);
+            }
+            if (!child && typeof parent.findNodeChild === "function") {
+                child = parent.findNodeChild(childPart, true);
+            }
+            if (!child) throw new Error("Node not found: " + s);
+            return child;
+        }
+        var matches = [];
+        var i, n, p, bits;
+        for (i = 0; i < Scene.getNumNodes(); i++) {
+            n = Scene.getNode(i);
+            if (!n) continue;
+            if (n.getLabel() === s || n.getName() === s) matches.push(n);
+        }
+        if (matches.length === 1) return matches[0];
+        if (matches.length === 0) throw new Error("Node not found: " + s);
+        bits = [];
+        for (i = 0; i < matches.length && i < 12; i++) {
+            n = matches[i];
+            p = n.getNodeParent ? n.getNodeParent() : null;
+            bits.push(n.getLabel() + " name=" + n.getName() + " elementID=" + n.elementID + " parent=" + (p ? p.getLabel() : ""));
+        }
+        throw new Error("Ambiguous node '" + s + "' (" + matches.length + " matches). Use elementID or Parent/Label. " + bits.join(" | "));
+    }
+"""
+
 # Returns: {sceneFile, selectedNode, figures:[{name,label,type}], cameras:[...],
 #           lights:[...], totalNodes}
 # Uses skeleton list (characters + clothing) rather than all nodes (potentially thousands).
@@ -71,15 +115,11 @@ _SCENE_INFO_SCRIPT = """\
 })()
 """
 
-# args: {nodeLabel}
-# Returns: {name, label, type, properties:{label:value}}
-# Searches by label first, then internal name.
-_GET_NODE_SCRIPT = """\
-(function(){
+# args: {nodeLabel} — label, internal name, elementID, or Parent/Label
+# Returns: {name, label, type, elementID, parent, properties:{label:value}}
+_GET_NODE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var n = Scene.findNodeByLabel(args.nodeLabel);
-    if (!n) n = Scene.findNode(args.nodeLabel);
-    if (!n) throw new Error("Node not found: " + args.nodeLabel);
+    var n = resolveNode(args.nodeLabel);
     var props = {};
     var seen = {};
     function addNumeric(pr) {
@@ -102,19 +142,24 @@ _GET_NODE_SCRIPT = """\
             }
         }
     }
-    return { name: n.getName(), label: n.getLabel(), type: n.className(), properties: props };
+    var parent = n.getNodeParent ? n.getNodeParent() : null;
+    return {
+        name: n.getName(),
+        label: n.getLabel(),
+        type: n.className(),
+        elementID: n.elementID,
+        parent: parent ? parent.getLabel() : null,
+        properties: props
+    };
 })()
 """
 
 # args: {nodeLabel, propertyName, value}
 # Returns: {node, property, value}
 # Matches propertyName against both display label and internal name.
-_SET_PROPERTY_SCRIPT = """\
-(function(){
+_SET_PROPERTY_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var n = Scene.findNodeByLabel(args.nodeLabel);
-    if (!n) n = Scene.findNode(args.nodeLabel);
-    if (!n) throw new Error("Node not found: " + args.nodeLabel);
+    var n = resolveNode(args.nodeLabel);
     function matchName(item, name) {
         return item.getLabel() === name || item.getName() === name;
     }
@@ -147,7 +192,7 @@ _SET_PROPERTY_SCRIPT = """\
     if (!prop.inherits("DzNumericProperty")) throw new Error("Property is not numeric: " + args.propertyName);
     if (typeof prop.lock === "function" && prop.isLocked && prop.isLocked()) prop.lock(false);
     prop.setValue(args.value);
-    return { node: n.getLabel(), property: prop.getLabel(), value: prop.getValue() };
+    return { node: n.getLabel(), elementID: n.elementID, property: prop.getLabel(), value: prop.getValue() };
 })()
 """
 
@@ -202,12 +247,9 @@ _LOAD_FILE_SCRIPT = """\
 # includeZero: if true, return all morphs; if false, only return morphs with non-zero values
 # Returns: {morphs: [{label, name, value, path}], count}
 # Lists all numeric properties (morphs) on a node
-_LIST_MORPHS_SCRIPT = """\
-(function(){
+_LIST_MORPHS_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
 
     var includeZero = args.includeZero !== undefined ? args.includeZero : false;
     var morphs = [];
@@ -247,12 +289,9 @@ _LIST_MORPHS_SCRIPT = """\
 # includeZero: if true, return all matching morphs; if false, only non-zero values
 # Returns: {morphs: [{label, name, value, path}], count, pattern}
 # Searches for morphs matching a pattern
-_SEARCH_MORPHS_SCRIPT = """\
-(function(){
+_SEARCH_MORPHS_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
 
     var pattern = args.pattern ? args.pattern.toLowerCase() : "";
     var includeZero = args.includeZero !== undefined ? args.includeZero : false;
@@ -299,12 +338,9 @@ _SEARCH_MORPHS_SCRIPT = """\
 # maxDepth: maximum recursion depth (default 10, 0 = unlimited)
 # Returns: {node, children: [{node, children}], totalDescendants}
 # Gets complete hierarchy tree for a node
-_GET_NODE_HIERARCHY_SCRIPT = """\
-(function(){
+_GET_NODE_HIERARCHY_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
 
     var maxDepth = args.maxDepth !== undefined ? args.maxDepth : 10;
     var totalDescendants = 0;
@@ -317,7 +353,8 @@ _GET_NODE_HIERARCHY_SCRIPT = """\
         var nodeInfo = {
             label: n.getLabel(),
             name: n.getName(),
-            type: n.className()
+            type: n.className(),
+            elementID: n.elementID
         };
 
         var children = [];
@@ -349,12 +386,9 @@ _GET_NODE_HIERARCHY_SCRIPT = """\
 # args: {nodeLabel}
 # Returns: {node, children: [{label, name, type}], count}
 # Lists direct children of a node
-_LIST_CHILDREN_SCRIPT = """\
-(function(){
+_LIST_CHILDREN_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
 
     var children = [];
     for (var i = 0; i < node.getNumNodeChildren(); i++) {
@@ -362,7 +396,8 @@ _LIST_CHILDREN_SCRIPT = """\
         children.push({
             label: child.getLabel(),
             name: child.getName(),
-            type: child.className()
+            type: child.className(),
+            elementID: child.elementID
         });
     }
 
@@ -377,12 +412,9 @@ _LIST_CHILDREN_SCRIPT = """\
 # args: {nodeLabel}
 # Returns: {node, parent: {label, name, type} | null}
 # Gets parent node of a node
-_GET_PARENT_SCRIPT = """\
-(function(){
+_GET_PARENT_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
 
     var parent = node.getNodeParent();
 
@@ -391,7 +423,8 @@ _GET_PARENT_SCRIPT = """\
         parent: parent ? {
             label: parent.getLabel(),
             name: parent.getName(),
-            type: parent.className()
+            type: parent.className(),
+            elementID: parent.elementID
         } : null
     };
 })()
@@ -401,16 +434,10 @@ _GET_PARENT_SCRIPT = """\
 # maintainWorldTransform: if true, adjust local transform to maintain world position
 # Returns: {success, node, newParent, previousParent}
 # Sets parent of a node
-_SET_PARENT_SCRIPT = """\
-(function(){
+_SET_PARENT_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
-
-    var newParent = Scene.findNodeByLabel(args.parentLabel);
-    if (!newParent) newParent = Scene.findNode(args.parentLabel);
-    if (!newParent) throw new Error("Parent node not found: " + args.parentLabel);
+    var node = resolveNode(args.nodeLabel);
+    var newParent = resolveNode(args.parentLabel);
 
     var maintainWorldTransform = args.maintainWorldTransform !== undefined ? args.maintainWorldTransform : true;
 
@@ -6266,12 +6293,9 @@ _SET_MATERIAL_PROPERTY_SCRIPT = """\
 # Phase 5: Direct morph setting
 # ---------------------------------------------------------------------------
 
-_SET_MORPH_SCRIPT = """\
-(function(){
+_SET_MORPH_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
     var search = (args.morphName || "").toLowerCase();
     var channels = [];
     function addChannel(p) {
@@ -6322,12 +6346,9 @@ _SET_MORPH_SCRIPT = """\
 # Phase 5: Node lifecycle
 # ---------------------------------------------------------------------------
 
-_DELETE_NODE_SCRIPT = """\
-(function(){
+_DELETE_NODE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var node = Scene.findNodeByLabel(args.nodeLabel);
-    if (!node) node = Scene.findNode(args.nodeLabel);
-    if (!node) throw new Error("Node not found: " + args.nodeLabel);
+    var node = resolveNode(args.nodeLabel);
     var label = node.getLabel();
     var childCount = node.getNumNodeChildren();
     Scene.removeNode(node);
@@ -7591,6 +7612,30 @@ _IMPORT_OBJ_SCRIPT = """\
 })()
 """
 
+_FIND_NODES_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var query = args.query === undefined || args.query === null ? "" : String(args.query);
+    if (!query) throw new Error("query is required");
+    var matches = [];
+    for (var i = 0; i < Scene.getNumNodes(); i++) {
+        var n = Scene.getNode(i);
+        if (!n) continue;
+        if (n.getLabel() === query || n.getName() === query) {
+            var p = n.getNodeParent ? n.getNodeParent() : null;
+            matches.push({
+                label: n.getLabel(),
+                name: n.getName(),
+                type: n.className(),
+                elementID: n.elementID,
+                parent: p ? p.getLabel() : null
+            });
+        }
+    }
+    return { query: query, count: matches.length, matches: matches };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -8046,6 +8091,10 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-import-obj": (
         "Import a Wavefront OBJ with Scale=1 and RunSilent (no options dialog)",
         _IMPORT_OBJ_SCRIPT,
+    ),
+    "vangard-find-nodes": (
+        "List every scene node matching a label or internal name, with elementIDs",
+        _FIND_NODES_SCRIPT,
     ),
 }
 
