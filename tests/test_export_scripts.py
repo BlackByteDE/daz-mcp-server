@@ -59,3 +59,10 @@ def test_find_nodes_lists_collisions():
     script = _REGISTRY["vangard-find-nodes"][1]
     assert "elementID: n.elementID" in script
     assert "matches.push" in script
+
+
+def test_apply_material_preset_preflights_missing_maps():
+    script = _REGISTRY["vangard-apply-material-preset"][1]
+    assert "Missing texture files" in script
+    assert script.index("mapPaths") < script.index("openFile(presetPath")
+    assert "allowMissing" in script
