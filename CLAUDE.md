@@ -19,14 +19,23 @@ Versionskollisionen kommt. Bei jedem Rebase/Merge von `upstream/master`
 die Basis auf deren neue Version setzen und den Zähler auf `.1`
 zurücksetzen.
 
-**Offen:** `.venv`/`uv.lock` hinken dem gepushten Stand hinterher — `uv
-sync` schlägt fehl, solange der `daz`-MCP-Server (`uv run --project
-D:/Dev/daz-mcp-server vangard-daz-mcp`) läuft und `vangard-daz-mcp.exe`
-sperrt. Nach Neustart der `daz`-MCP-Verbindung `uv sync` nachholen; dabei
-prüfen, ob der lokale `dazpy`-Versionsdrift in `uv.lock` (2.6.0 → 2.9.0)
-so gewollt ist, bevor `uv.lock` committed wird. Der `5421aa5`-Fix
-(`daz_render_with_camera`-Symmetrie) ist bisher nur per Unit-Test
-abgesichert, noch nicht live nachgetestet.
+**Regel:** Der `bb.<n>`-Zähler in `pyproject.toml` wird vor **jedem**
+`git push`, der inhaltliche Änderungen enthält, um 1 erhöht — auch bei
+mehreren kleinen Fix-Commits in einer Push-Session. Nach dem Bump lokal
+`uv sync` laufen lassen, damit das venv den neuen Versionsstand zieht,
+bevor gepusht wird.
+
+## Aktueller Stand (2026-08-31)
+
+Vier Fix-Commits (`89bdc79`, `4a12478`, `ea08884`, `85ff8ea` — Bug-Katalog
+OBJ/dForce/ElementID/Material-Preset/BVH-Import) wurden gepusht, ohne den
+`bb`-Zähler zu erhöhen. Nachträglich korrigiert auf `0.5.0+bb.2`; `uv
+sync` danach erneut ausgeführt, venv zieht jetzt `0.5.0+bb.2`. Der
+`dazpy`-Versionsdrift aus dem 2026-08-30-Eintrag ist aufgelöst — `uv.lock`
+steht sauber auf `dazpy==2.9.0`, keine offene `uv.lock`-Änderung mehr.
+
+Der `5421aa5`-Fix (`daz_render_with_camera`-Symmetrie) ist weiterhin nur
+per Unit-Test abgesichert, noch nicht live nachgetestet.
 
 **Hinweis:** Am 2026-08-30 wurden die Commit-Hashes von `f5979b2`,
 `d899adb`, `1bc2069` und `e8165fa` per `filter-branch` + Force-Push neu
