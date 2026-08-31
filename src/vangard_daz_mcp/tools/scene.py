@@ -56,11 +56,18 @@ async def daz_load_file(
                    (.duf, .daz, .obj, .fbx, etc.).
         merge: If True (default), merge the file into the existing scene.
                If False, replace the current scene entirely.
+               Ignored for ``.obj`` — OBJ import always merges via the silent
+               importer at scale 1 (1 unit = 1 cm).
 
     Returns:
       - success: true on success
       - file: the path that was loaded
     """
+    if file_path.lower().endswith(".obj"):
+        return await _execute_by_id(
+            "vangard-import-obj",
+            {"filePath": file_path, "scaleFactor": 1.0},
+        )
     if merge:
         try:
             await run_dazpy(lambda: get_scene().load(file_path))
