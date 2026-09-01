@@ -196,12 +196,8 @@ async def daz_add_dforce_dynamic_surface(node_label: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def daz_run_dforce_simulation(
-    node_label: str | None = None,
-    start_frame: int = 0,
-    end_frame: int | None = None,
-) -> dict[str, Any]:
-    """Run dForce cloth or hair simulation for a frame range.
+async def daz_run_dforce_simulation(node_label: str | None = None) -> dict[str, Any]:
+    """Run dForce cloth or hair simulation.
 
     Triggers the DAZ Studio simulation engine (``DzSimulationMgr``) for all
     simulatable nodes in the scene, or limits the simulation to a single node
@@ -211,29 +207,30 @@ async def daz_run_dforce_simulation(
     node.  Use ``daz_set_dforce_property`` to tune modifier settings before
     calling this tool.
 
+    There is no way to control how much is simulated per call from here.
+    ``DzSimulationMgr.simulate()``'s time-range argument does not affect the
+    actual simulated duration — verified live (Bug-Katalog #21): a 0-frame
+    range and a 30-frame range produced bit-identical results, and
+    pre-setting the scene's anim range first made no difference either. The
+    real duration comes from DAZ Studio's own Simulation Settings > Duration
+    panel and can currently only be changed through the DAZ Studio UI.
+
     Args:
         node_label: Display label of the clothing or hair node to simulate.
             When omitted the entire scene is simulated.
-        start_frame: First frame of the simulation range (default 0).
-        end_frame: Last frame of the simulation range.  When omitted the
-            scene's current end frame is used.
 
     Returns:
         Dict with keys:
         - success: true on success
         - node: node label that was targeted, or "all simulatable nodes"
-        - start_frame: effective start frame
-        - end_frame: effective end frame
 
     Examples:
-        daz_run_dforce_simulation("Outfit", 0, 60)
-        daz_run_dforce_simulation(start_frame=0, end_frame=120)
+        daz_run_dforce_simulation("Outfit")
+        daz_run_dforce_simulation()
     """
-    args: dict[str, Any] = {"startFrame": start_frame}
+    args: dict[str, Any] = {}
     if node_label is not None:
         args["nodeLabel"] = node_label
-    if end_frame is not None:
-        args["endFrame"] = end_frame
     return await _execute_by_id("vangard-run-dforce-simulation", args)
 
 

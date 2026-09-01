@@ -6815,13 +6815,16 @@ _UNFIT_ITEM_SCRIPT = """\
 
 _RUN_DFORCE_SIMULATION_SCRIPT = """\
 (function(){
+    // NOTE (Bug 21): DzSimulationMgr.simulate()'s DzTimeRange argument does
+    // NOT control how much is actually simulated -- verified live: calling
+    // with a 0-frame range and a 30-frame range produced bit-identical
+    // results, and pre-setting Scene.setAnimRange() to a 1-frame window
+    // first made no difference either. The actual duration is governed by
+    // DAZ Studio's own Simulation Settings > Duration panel, which has no
+    // known scripting entry point. Do not reintroduce start/end frame
+    // parameters here without a verified way to make them do something.
     var args = getArguments()[0] || {};
     var nodeLabel = args.nodeLabel;
-    var timeStep = Scene.getTimeStep();
-    var startFrame = args.startFrame !== undefined ? parseInt(args.startFrame) : 0;
-    var endFrame = args.endFrame !== undefined
-        ? parseInt(args.endFrame)
-        : Math.round(Scene.getAnimRange().end / timeStep);
 
     if (nodeLabel) {
         var node = Scene.findNodeByLabel(nodeLabel);
@@ -6835,8 +6838,8 @@ _RUN_DFORCE_SIMULATION_SCRIPT = """\
     if (!simMgr) throw new Error("DzSimulationMgr not available via App.getSimulationMgr()");
 
     if (typeof simMgr.simulate === 'function') {
-        var range = new DzTimeRange(startFrame * timeStep, endFrame * timeStep);
-        simMgr.simulate(range);
+        var animRange = Scene.getAnimRange();
+        simMgr.simulate(new DzTimeRange(animRange.start, animRange.end));
     } else {
         var methods = [];
         for (var k in simMgr) { if (typeof simMgr[k] === 'function') methods.push(k); }
@@ -6845,9 +6848,7 @@ _RUN_DFORCE_SIMULATION_SCRIPT = """\
 
     return {
         success: true,
-        node: nodeLabel || "all simulatable nodes",
-        start_frame: startFrame,
-        end_frame: endFrame
+        node: nodeLabel || "all simulatable nodes"
     };
 })()
 """
@@ -8238,7 +8239,8 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     ),
     # Phase 6.2: dForce simulation
     "vangard-run-dforce-simulation": (
-        "Run dForce cloth/hair simulation for a frame range, optionally limited to one node",
+        "Run dForce cloth/hair simulation (duration set by DAZ's own Simulation "
+        "Settings, not scriptable), optionally limited to one node",
         _RUN_DFORCE_SIMULATION_SCRIPT,
     ),
     "vangard-bake-simulation": (
