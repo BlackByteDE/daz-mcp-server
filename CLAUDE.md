@@ -1,6 +1,6 @@
 # CLAUDE.md (Project Index)
 
-Bug-Katalog: `C:\Users\Black-Byte\Development\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
+Bug-Katalog: `D:\Dev\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
 (Handoff-Notizen für die separate OpenCode-Session: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`)
 
 ## Aktueller Stand (2026-08-30)

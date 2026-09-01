@@ -6827,8 +6827,8 @@ _RUN_DFORCE_SIMULATION_SCRIPT = """\
         var node = Scene.findNodeByLabel(nodeLabel);
         if (!node) node = Scene.findNode(nodeLabel);
         if (!node) throw new Error("Node not found: " + nodeLabel);
-        Scene.clearSelection();
-        Scene.selectNode(node);
+        Scene.selectAllNodes(false);
+        node.select(true);
     }
 
     var simMgr = App.getSimulationMgr ? App.getSimulationMgr() : null;
@@ -6861,8 +6861,8 @@ _BAKE_SIMULATION_SCRIPT = """\
         var node = Scene.findNodeByLabel(nodeLabel);
         if (!node) node = Scene.findNode(nodeLabel);
         if (!node) throw new Error("Node not found: " + nodeLabel);
-        Scene.clearSelection();
-        Scene.selectNode(node);
+        Scene.selectAllNodes(false);
+        node.select(true);
     }
 
     var simMgr = App.getSimulationMgr ? App.getSimulationMgr() : null;
@@ -7012,8 +7012,8 @@ _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
     var act = mgr.findAction("DzAddDForceModifierDynamicSurfaceAction");
     if (!act) throw new Error("Action 'DzAddDForceModifierDynamicSurfaceAction' not found in DzActionMgr");
 
-    Scene.clearSelection();
-    Scene.selectNode(node);
+    Scene.selectAllNodes(false);
+    node.select(true);
     act.trigger();
 
     obj = (typeof node.getObject === "function") ? node.getObject() : null;
