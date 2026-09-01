@@ -92,6 +92,40 @@ async def daz_unfit_item(item_label: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def daz_add_dforce_dynamic_surface(node_label: str) -> dict[str, Any]:
+    """Add a dForce Dynamic Surface modifier to a scene node.
+
+    Triggers the ``DzActionMgr`` action behind Edit > Object > Geometry >
+    Add dForce Modifier: Dynamic Surface, which is the step that makes a
+    mesh simulatable by dForce in the first place. Selects the node, then
+    invokes the action; if a ``DzDForceModifier`` is already present the
+    call is a no-op that reports the existing modifier instead of adding
+    a duplicate.
+
+    Use this before ``daz_set_dforce_property`` or ``daz_run_dforce_simulation``
+    on a node that isn't dForce-enabled yet (e.g. custom props or clothing
+    that didn't ship with a dForce modifier).
+
+    Args:
+        node_label: Display label of the node to make dForce-simulatable.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - already_present: true if a DzDForceModifier already existed
+        - modifier: "DzDForceModifier"
+
+    Examples:
+        daz_add_dforce_dynamic_surface("Tablecloth")
+        daz_add_dforce_dynamic_surface("Custom Cape")
+    """
+    return await _execute_by_id(
+        "vangard-add-dforce-dynamic-surface", {"nodeLabel": node_label}
+    )
+
+
+@mcp.tool()
 async def daz_run_dforce_simulation(
     node_label: str | None = None,
     start_frame: int = 0,

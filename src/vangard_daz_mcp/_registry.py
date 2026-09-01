@@ -6980,6 +6980,56 @@ _SET_DFORCE_PROPERTY_SCRIPT = """\
 })()
 """
 
+_ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function hasDforceModifier(host) {
+        if (!host || typeof host.getNumModifiers !== 'function') return false;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (mod.className && mod.className() === "DzDForceModifier") return true;
+        }
+        return false;
+    }
+
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (hasDforceModifier(node) || hasDforceModifier(obj)) {
+        return {
+            success: true,
+            node: node.getLabel(),
+            already_present: true,
+            modifier: "DzDForceModifier"
+        };
+    }
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzAddDForceModifierDynamicSurfaceAction");
+    if (!act) throw new Error("Action 'DzAddDForceModifierDynamicSurfaceAction' not found in DzActionMgr");
+
+    Scene.clearSelection();
+    Scene.selectNode(node);
+    act.trigger();
+
+    obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (!hasDforceModifier(node) && !hasDforceModifier(obj)) {
+        throw new Error("Action triggered but no DzDForceModifier found on '" + nodeLabel + "' afterward");
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        already_present: false,
+        modifier: "DzDForceModifier"
+    };
+})()
+"""
+
 _COLLECT_POSE_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -8069,6 +8119,11 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-set-dforce-property": (
         "Set a dForce modifier property (stiffness, gravity scale, etc.) on a scene node",
         _SET_DFORCE_PROPERTY_SCRIPT,
+    ),
+    "vangard-add-dforce-dynamic-surface": (
+        "Add a dForce Dynamic Surface modifier to a node via DzActionMgr "
+        "(Edit > Object > Geometry > Add dForce Modifier: Dynamic Surface)",
+        _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT,
     ),
     # Phase 6.3: Pose library
     "vangard-collect-pose": (

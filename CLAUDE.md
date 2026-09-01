@@ -59,7 +59,7 @@ ungültig.
 ## Architecture Summary
 - **Version:** 0.4.0
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 138 tools registered across 13 tool modules.
+- **Registry:** 139 tools registered across 13 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 13 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
@@ -69,7 +69,7 @@ ungültig.
 - **Phase 4.13:** Performance Timing — `daz_time_expression`, `daz_sync_character_beats`
 - **Phase 5:** Gap Coverage — `daz_list_materials`, `daz_get_material`, `daz_set_material_property`, `daz_set_morph`, `daz_delete_node`, `daz_list_lights`, `daz_create_light`, `daz_list_cameras`, `daz_create_camera`, `daz_save_scene`, `daz_get_selected_nodes`, `daz_set_render_output`, `daz_reset_pose`
 - **Phase 6.1:** Wardrobe — `daz_list_fitted_items`, `daz_fit_clothing`, `daz_unfit_item`
-- **Phase 6.2:** dForce Simulation — `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
+- **Phase 6.2:** dForce Simulation — `daz_add_dforce_dynamic_surface`, `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
 - **Phase 6.3:** Pose Library — `daz_save_pose`, `daz_load_pose`
 - **Phase 6.4:** Material Preset — `daz_apply_material_preset`, `daz_copy_material`
 - **Phase 6.5:** Figure Diagnostics — `daz_get_figure_info`, `daz_set_subdivision`
