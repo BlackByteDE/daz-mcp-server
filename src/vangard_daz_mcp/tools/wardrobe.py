@@ -176,6 +176,13 @@ async def daz_add_dforce_dynamic_surface(node_label: str) -> dict[str, Any]:
     on a node that isn't dForce-enabled yet (e.g. custom props or clothing
     that didn't ship with a dForce modifier).
 
+    This does not set up any pinning. A newly added modifier has no
+    influence weights, so the whole surface is free to simulate — for
+    anything that should hang or drape from a fixed point (hair rooted on
+    a scalp, a cape's collar, a curtain's rod), pin the anchor vertices
+    with ``daz_set_dforce_influence_weights`` first, or the object will
+    simply fly away under gravity on the first simulation run.
+
     Args:
         node_label: Display label of the node to make dForce-simulatable.
 
@@ -192,6 +199,85 @@ async def daz_add_dforce_dynamic_surface(node_label: str) -> dict[str, Any]:
     """
     return await _execute_by_id(
         "vangard-add-dforce-dynamic-surface", {"nodeLabel": node_label}
+    )
+
+
+@mcp.tool()
+async def daz_set_dforce_influence_weights(
+    node_label: str,
+    vertex_weights: dict[int, float] | None = None,
+    default_weight: float = 1.0,
+) -> dict[str, Any]:
+    """Pin or free individual vertices for dForce simulation.
+
+    Controls how strongly each vertex follows the simulation versus staying
+    fixed to the base shape, via ``DzDForceModifier.setInfluenceWeights``:
+    ``0.0`` means fully fixed/pinned, ``1.0`` means fully simulated/free.
+
+    Without this, a dForce dynamic surface (added via
+    ``daz_add_dforce_dynamic_surface``) has nothing anchoring it — it flies
+    off under gravity on the very first simulation run instead of hanging or
+    draping from a fixed point (Bug-Katalog #20: confirmed live with a
+    hair-strand-style repro — an unpinned strand rooted on a collision
+    sphere flew ~220 units away on the first simulation; pinning the two
+    root vertices to 0.0 instead made it drape smoothly along the sphere's
+    surface, staying within the sphere's own radius the whole way down).
+
+    Args:
+        node_label: Display label of the node (must already have a dForce
+            modifier from ``daz_add_dforce_dynamic_surface``).
+        vertex_weights: Mapping of vertex index to weight (0.0-1.0) for
+            vertices that should differ from ``default_weight``. Typical
+            use: pin the root/scalp-adjacent vertices of a hair strand or
+            clothing seam to ``0.0`` while leaving the rest at the default.
+        default_weight: Weight applied to every vertex not listed in
+            ``vertex_weights`` (default ``1.0``, fully simulated).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - vertex_count: total vertices in the node's geometry
+        - default_weight: echoed default weight
+        - overridden_count: number of vertices set via vertex_weights
+
+    Examples:
+        daz_set_dforce_influence_weights("Hair Strand", {0: 0.0, 1: 0.0})
+        daz_set_dforce_influence_weights("Cape", default_weight=0.0)
+    """
+    args: dict[str, Any] = {"nodeLabel": node_label, "defaultWeight": default_weight}
+    if vertex_weights:
+        args["vertexWeights"] = {str(k): v for k, v in vertex_weights.items()}
+    return await _execute_by_id("vangard-set-dforce-influence-weights", args)
+
+
+@mcp.tool()
+async def daz_get_dforce_influence_weights(node_label: str) -> dict[str, Any]:
+    """Read the per-vertex dForce influence (pinning) weights on a node.
+
+    Counterpart to ``daz_set_dforce_influence_weights``. Useful to verify
+    pinning took effect, or to check whether a node has any influence
+    weights set at all before assuming it will drape rather than fly free.
+
+    Args:
+        node_label: Display label of the node (must already have a dForce
+            modifier).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - has_influence_weights: false if no weight map has been set yet
+        - vertex_count: number of weights returned (only present when
+          has_influence_weights is true)
+        - weights: list of per-vertex weights, index-aligned with the
+          node's geometry (empty when has_influence_weights is false)
+
+    Examples:
+        daz_get_dforce_influence_weights("Hair Strand")
+    """
+    return await _execute_by_id(
+        "vangard-get-dforce-influence-weights", {"nodeLabel": node_label}
     )
 
 

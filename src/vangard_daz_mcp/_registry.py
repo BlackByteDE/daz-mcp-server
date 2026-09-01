@@ -7031,6 +7031,128 @@ _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
 })()
 """
 
+_SET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var defaultWeight = args.defaultWeight !== undefined ? parseFloat(args.defaultWeight) : 1.0;
+    var overrides = args.vertexWeights || {};
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function isDforceMod(mod) {
+        if (!mod) return false;
+        var cn = (mod.className ? mod.className() : "").toLowerCase();
+        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
+        if (typeof mod.findProperty === "function") {
+            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
+        }
+        return false;
+    }
+    function searchMods(host) {
+        if (!host || typeof host.getNumModifiers !== "function") return null;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (isDforceMod(mod)) return mod;
+        }
+        return null;
+    }
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
+    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
+    if (!modifier) {
+        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
+    }
+
+    var geom = obj && obj.getCachedGeom ? obj.getCachedGeom() : null;
+    if (!geom) throw new Error("No cached geometry found on node: " + nodeLabel);
+    var numVerts = geom.getNumVertices();
+
+    var wm = new DzWeightMap();
+    wm.setNumWeights(numVerts);
+    for (var i = 0; i < numVerts; i++) {
+        wm.setFloatWeight(i, defaultWeight);
+    }
+
+    var overriddenCount = 0;
+    for (var key in overrides) {
+        var idx = parseInt(key, 10);
+        if (isNaN(idx) || idx < 0 || idx >= numVerts) continue;
+        wm.setFloatWeight(idx, parseFloat(overrides[key]));
+        overriddenCount++;
+    }
+
+    modifier.setInfluenceWeights(wm);
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        vertex_count: numVerts,
+        default_weight: defaultWeight,
+        overridden_count: overriddenCount
+    };
+})()
+"""
+
+_GET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function isDforceMod(mod) {
+        if (!mod) return false;
+        var cn = (mod.className ? mod.className() : "").toLowerCase();
+        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
+        if (typeof mod.findProperty === "function") {
+            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
+        }
+        return false;
+    }
+    function searchMods(host) {
+        if (!host || typeof host.getNumModifiers !== "function") return null;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (isDforceMod(mod)) return mod;
+        }
+        return null;
+    }
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
+    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
+    if (!modifier) {
+        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
+    }
+
+    var wm = modifier.getInfluenceWeights();
+    if (!wm) {
+        return {
+            success: true,
+            node: node.getLabel(),
+            has_influence_weights: false,
+            weights: []
+        };
+    }
+
+    var n = wm.getNumWeights();
+    var weights = [];
+    for (var i = 0; i < n; i++) weights.push(wm.getFloatWeight(i));
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        has_influence_weights: true,
+        vertex_count: n,
+        weights: weights
+    };
+})()
+"""
+
 _RUN_TRANSFER_UTILITY_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -8255,6 +8377,15 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "Add a dForce Dynamic Surface modifier to a node via DzActionMgr "
         "(Edit > Object > Geometry > Add dForce Modifier: Dynamic Surface)",
         _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT,
+    ),
+    "vangard-set-dforce-influence-weights": (
+        "Pin/free individual vertices for dForce simulation via "
+        "DzDForceModifier.setInfluenceWeights (0 = fixed to base shape, 1 = free)",
+        _SET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT,
+    ),
+    "vangard-get-dforce-influence-weights": (
+        "Read the per-vertex dForce influence (pinning) weights on a node",
+        _GET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT,
     ),
     "vangard-run-transfer-utility": (
         "Project rigging/morphs/UVs/groups from a source node onto a target node "
