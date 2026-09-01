@@ -7030,6 +7030,135 @@ _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
 })()
 """
 
+_RUN_TRANSFER_UTILITY_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var sourceLabel = args.sourceLabel;
+    var targetLabel = args.targetLabel;
+
+    var source = Scene.findNodeByLabel(sourceLabel);
+    if (!source) source = Scene.findNode(sourceLabel);
+    if (!source) throw new Error("Source node not found: " + sourceLabel);
+
+    var target = Scene.findNodeByLabel(targetLabel);
+    if (!target) target = Scene.findNode(targetLabel);
+    if (!target) throw new Error("Target node not found: " + targetLabel);
+
+    var tu = new DzTransferUtility();
+    tu.setSilentImporters(true);
+    tu.setSource(source);
+    tu.setTarget(target);
+    tu.setTransferBinding(!!args.transferBinding);
+    tu.setTransferMorphs(!!args.transferMorphs);
+    tu.setTransferUVs(!!args.transferUVs);
+    tu.setTransferMaterialGroups(!!args.transferMaterialGroups);
+    tu.setTransferFaceGroups(!!args.transferFaceGroups);
+    tu.setFitToFigure(!!args.fitToFigure);
+    tu.setParentToFigure(!!args.parentToFigure);
+    tu.setMergeHierarchies(!!args.mergeHierarchies);
+
+    var ok = tu.doTransfer();
+    if (!ok) {
+        throw new Error("DzTransferUtility.doTransfer() returned false (source: '" +
+            sourceLabel + "', target: '" + targetLabel + "')");
+    }
+
+    return {
+        success: true,
+        source: source.getLabel(),
+        target: target.getLabel()
+    };
+})()
+"""
+
+_RESOLVE_DFORCE_PROVIDER_JS = """
+    function resolveDforceProvider(nodeLabel, materialName) {
+        var node = Scene.findNodeByLabel(nodeLabel);
+        if (!node) node = Scene.findNode(nodeLabel);
+        if (!node) throw new Error("Node not found: " + nodeLabel);
+        var obj = node.getObject();
+        if (!obj) throw new Error("Node has no geometry: " + nodeLabel);
+        var shape = obj.getCurrentShape();
+        if (!shape) throw new Error("Node has no shape: " + nodeLabel);
+        if (typeof shape.findSimulationSettingsProvider !== "function") {
+            throw new Error("findSimulationSettingsProvider not available on this shape/DS version");
+        }
+        var matName = materialName;
+        if (!matName) {
+            if (shape.getNumMaterials() === 0) throw new Error("Node has no materials: " + nodeLabel);
+            matName = shape.getMaterial(0).getName();
+        }
+        var provider = shape.findSimulationSettingsProvider(matName);
+        if (!provider) {
+            var names = [];
+            if (typeof shape.getSimulationProviderNames === "function") {
+                var pn = shape.getSimulationProviderNames();
+                for (var i = 0; i < pn.length; i++) names.push(pn[i]);
+            }
+            throw new Error("No dForce simulation settings for material '" + matName +
+                "' on '" + nodeLabel + "' (dForce modifier may be missing). Available: " + names.join(", "));
+        }
+        return { node: node, materialName: matName, provider: provider };
+    }
+"""
+
+_GET_DFORCE_SURFACE_PROPERTIES_SCRIPT = "(function(){\n" + _RESOLVE_DFORCE_PROVIDER_JS + """
+    var args = getArguments()[0] || {};
+    var resolved = resolveDforceProvider(args.nodeLabel, args.materialName);
+    var provider = resolved.provider;
+
+    var props = [];
+    for (var p = 0; p < provider.getNumProperties(); p++) {
+        var prop = provider.getProperty(p);
+        var entry = { name: prop.getName(), label: prop.getLabel(), type: "unknown", value: null };
+        if (prop.inherits("DzNumericProperty")) {
+            entry.type = "numeric";
+            entry.value = prop.getValue();
+        }
+        props.push(entry);
+    }
+
+    return {
+        node: resolved.node.getLabel(),
+        material: resolved.materialName,
+        property_count: props.length,
+        properties: props
+    };
+})()
+"""
+
+_SET_DFORCE_SURFACE_PROPERTY_SCRIPT = "(function(){\n" + _RESOLVE_DFORCE_PROVIDER_JS + """
+    var args = getArguments()[0] || {};
+    var resolved = resolveDforceProvider(args.nodeLabel, args.materialName);
+    var provider = resolved.provider;
+
+    var prop = provider.findProperty(args.propertyName);
+    if (!prop) {
+        var available = [];
+        for (var p = 0; p < provider.getNumProperties(); p++) {
+            available.push(provider.getProperty(p).getName());
+        }
+        throw new Error("Property '" + args.propertyName + "' not found on dForce surface '" +
+            resolved.materialName + "'. Available: " + available.join(", "));
+    }
+    if (!prop.inherits("DzNumericProperty")) {
+        throw new Error("Property '" + args.propertyName + "' is not a settable numeric property");
+    }
+
+    var oldValue = prop.getValue();
+    prop.setValue(parseFloat(args.value));
+
+    return {
+        success: true,
+        node: resolved.node.getLabel(),
+        material: resolved.materialName,
+        property: prop.getName(),
+        old_value: oldValue,
+        new_value: prop.getValue()
+    };
+})()
+"""
+
 _COLLECT_POSE_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -8124,6 +8253,22 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "Add a dForce Dynamic Surface modifier to a node via DzActionMgr "
         "(Edit > Object > Geometry > Add dForce Modifier: Dynamic Surface)",
         _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT,
+    ),
+    "vangard-run-transfer-utility": (
+        "Project rigging/morphs/UVs/groups from a source node onto a target node "
+        "via DzTransferUtility (headless equivalent of Edit > Object > Rigging > "
+        "Transfer Utility...)",
+        _RUN_TRANSFER_UTILITY_SCRIPT,
+    ),
+    "vangard-get-dforce-surface-properties": (
+        "List per-surface dForce simulation properties (Collision Offset, Self "
+        "Collide, Dynamics Strength, stiffness, etc.) via DzDForceSettingsProvider "
+        "— these live on the Surfaces-pane 'Simulation' category, not on DzMaterial",
+        _GET_DFORCE_SURFACE_PROPERTIES_SCRIPT,
+    ),
+    "vangard-set-dforce-surface-property": (
+        "Set a per-surface dForce simulation property via DzDForceSettingsProvider",
+        _SET_DFORCE_SURFACE_PROPERTY_SCRIPT,
     ),
     # Phase 6.3: Pose library
     "vangard-collect-pose": (

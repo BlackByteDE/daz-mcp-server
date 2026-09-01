@@ -92,6 +92,76 @@ async def daz_unfit_item(item_label: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def daz_run_transfer_utility(
+    source_label: str,
+    target_label: str,
+    transfer_binding: bool = True,
+    transfer_morphs: bool = True,
+    transfer_uvs: bool = False,
+    transfer_material_groups: bool = False,
+    transfer_face_groups: bool = False,
+    fit_to_figure: bool = True,
+    parent_to_figure: bool = False,
+    merge_hierarchies: bool = False,
+) -> dict[str, Any]:
+    """Project rigging, morphs, UVs, or groups from one node onto another.
+
+    Headless equivalent of Edit > Object > Rigging > Transfer Utility...,
+    using the scriptable ``DzTransferUtility`` object (``setSource`` /
+    ``setTarget`` / ``doTransfer``) instead of the GUI dialog. Unlike the
+    dialog's "Item Type" template (e.g. "Hair"), each aspect of the transfer
+    is toggled explicitly here, so a prop or hair mesh doesn't end up with an
+    unrelated full body skeleton just because "Hair" pulled one in.
+
+    Typical use: project a figure's skin binding onto a static prop so it
+    conforms to the figure's pose, and/or project morphs so the prop follows
+    shape changes.
+
+    Args:
+        source_label: Display label of the source node (usually the figure
+            whose rigging/morphs are the reference).
+        target_label: Display label of the target node (the prop/hair mesh
+            receiving the projection).
+        transfer_binding: Project skin/bone weights onto the target (default True).
+        transfer_morphs: Project morphs onto the target (default True).
+        transfer_uvs: Project UV maps onto the target (default False).
+        transfer_material_groups: Project material zone groups (default False).
+        transfer_face_groups: Project face groups (default False).
+        fit_to_figure: Fit the target onto the figure as a conforming item
+            after the transfer (default True).
+        parent_to_figure: Parent the target node to the figure (default False).
+        merge_hierarchies: Merge the target's node hierarchy into the figure's
+            (default False).
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - source: confirmed source node label
+        - target: confirmed target node label
+
+    Examples:
+        daz_run_transfer_utility("Genesis 8 Female", "Custom Hair Prop")
+        daz_run_transfer_utility("Genesis 9", "Bracelet", fit_to_figure=True, parent_to_figure=False)
+        daz_run_transfer_utility("Genesis 8 Female", "Cape", transfer_binding=True, transfer_morphs=False)
+    """
+    return await _execute_by_id(
+        "vangard-run-transfer-utility",
+        {
+            "sourceLabel": source_label,
+            "targetLabel": target_label,
+            "transferBinding": transfer_binding,
+            "transferMorphs": transfer_morphs,
+            "transferUVs": transfer_uvs,
+            "transferMaterialGroups": transfer_material_groups,
+            "transferFaceGroups": transfer_face_groups,
+            "fitToFigure": fit_to_figure,
+            "parentToFigure": parent_to_figure,
+            "mergeHierarchies": merge_hierarchies,
+        },
+    )
+
+
+@mcp.tool()
 async def daz_add_dforce_dynamic_surface(node_label: str) -> dict[str, Any]:
     """Add a dForce Dynamic Surface modifier to a scene node.
 
@@ -206,19 +276,19 @@ async def daz_set_dforce_property(
     property_name: str,
     value: float,
 ) -> dict[str, Any]:
-    """Set a dForce modifier property on a scene node.
+    """Set a property directly on a node's dForce modifier object.
 
-    Locates the dForce modifier attached to the named node (checking both
+    Locates the ``DzDForceModifier`` attached to the named node (checking both
     node-level and shape-level modifiers) and sets the named property to the
-    given value.  Common property names include:
+    given value. The modifier itself only carries a handful of properties —
+    typically ``"Freeze Simulation"``, ``"Simulation Object Type"``, and
+    ``"Simulation Base Shape"``.
 
-    - ``"Dynamics Strength"`` — 0–1, overall simulation influence
-    - ``"Stretch Stiffness"`` — resistance to stretching
-    - ``"Shear Stiffness"`` — resistance to shearing deformation
-    - ``"Bend Stiffness"`` — resistance to bending
-    - ``"Gravity Scale"`` — multiplier on the scene gravity (1.0 = normal)
-    - ``"Density"`` — simulated mass per unit area
-    - ``"Global Damping"`` — velocity damping applied each timestep
+    Most of the sliders visible in the Surfaces-pane "Simulation" category —
+    ``"Dynamics Strength"``, ``"Stretch/Shear/Bend Stiffness"``,
+    ``"Collision Offset"``, ``"Self Collide"``, ``"Friction"``, etc. — live
+    on a *separate* per-material object instead, not on this modifier. Use
+    ``daz_set_dforce_surface_property`` for those.
 
     If the property name is not found exactly, a case-insensitive fallback
     search is attempted.  On failure the error lists all available properties.
@@ -238,14 +308,95 @@ async def daz_set_dforce_property(
         - new_value: value that was set
 
     Examples:
-        daz_set_dforce_property("Outfit", "Dynamics Strength", 1.0)
-        daz_set_dforce_property("Hair", "Gravity Scale", 0.5)
-        daz_set_dforce_property("Dress", "Bend Stiffness", 0.2)
+        daz_set_dforce_property("Outfit", "Freeze Simulation", 1.0)
+        daz_set_dforce_property("Hair", "Simulation Object Type", 0)
     """
     return await _execute_by_id(
         "vangard-set-dforce-property",
         {"nodeLabel": node_label, "propertyName": property_name, "value": value},
     )
+
+
+@mcp.tool()
+async def daz_get_dforce_surface_properties(
+    node_label: str, material_name: str | None = None
+) -> dict[str, Any]:
+    """List per-surface dForce simulation properties for a material zone.
+
+    These are the sliders shown in the Surfaces pane under the "Simulation"
+    category once a dForce modifier is present — ``Collision Offset``,
+    ``Self Collide``, ``Friction``, ``Dynamics Strength``, ``Stretch/Shear/
+    Bend Stiffness``, and many more (135 properties on a typical figure
+    surface, including hair-specific pre-sim/pre-render tunables). They live
+    on a ``DzDForceSettingsProvider`` object reached via
+    ``shape.findSimulationSettingsProvider(materialName)`` — a separate
+    object from the material itself, which is why ``daz_get_material``
+    never shows them.
+
+    Args:
+        node_label: Display label of the node (must have a dForce modifier).
+        material_name: Internal name of the material/surface zone. When
+            omitted, the node's first material is used.
+
+    Returns:
+        Dict with keys:
+        - node: confirmed node label
+        - material: confirmed material name
+        - property_count: number of properties returned
+        - properties: list of {name, label, type, value}
+
+    Examples:
+        daz_get_dforce_surface_properties("Outfit", "Fabric")
+        daz_get_dforce_surface_properties("Genesis 8 Female")
+    """
+    args: dict[str, Any] = {"nodeLabel": node_label}
+    if material_name is not None:
+        args["materialName"] = material_name
+    return await _execute_by_id("vangard-get-dforce-surface-properties", args)
+
+
+@mcp.tool()
+async def daz_set_dforce_surface_property(
+    node_label: str,
+    property_name: str,
+    value: float,
+    material_name: str | None = None,
+) -> dict[str, Any]:
+    """Set a per-surface dForce simulation property on a material zone.
+
+    Counterpart to ``daz_set_dforce_property``: while that tool only reaches
+    the three properties on the ``DzDForceModifier`` object itself, this one
+    reaches the ``DzDForceSettingsProvider`` for a specific material —
+    ``Collision Offset``, ``Self Collide``, ``Friction``, ``Dynamics
+    Strength``, ``Stretch/Shear/Bend Stiffness``, ``Density``, and more (use
+    ``daz_get_dforce_surface_properties`` to see the full list for a node).
+
+    Args:
+        node_label: Display label of the node (must have a dForce modifier).
+        property_name: Exact property name, e.g. ``"Collision Offset"``.
+        value: Numeric value to apply.
+        material_name: Internal name of the material/surface zone. When
+            omitted, the node's first material is used — pass this
+            explicitly for multi-material nodes where zones should differ.
+
+    Returns:
+        Dict with keys:
+        - success: true on success
+        - node: confirmed node label
+        - material: confirmed material name
+        - property: confirmed property name
+        - old_value: value before the change
+        - new_value: value after the change
+
+    Examples:
+        daz_set_dforce_surface_property("Outfit", "Collision Offset", 0.5)
+        daz_set_dforce_surface_property("Outfit", "Self Collide", 1, material_name="Fabric")
+        daz_set_dforce_surface_property("Hair", "Dynamics Strength", 0.8)
+    """
+    args: dict[str, Any] = {"nodeLabel": node_label, "propertyName": property_name, "value": value}
+    if material_name is not None:
+        args["materialName"] = material_name
+    return await _execute_by_id("vangard-set-dforce-surface-property", args)
 
 
 @mcp.tool()
