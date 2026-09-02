@@ -2,6 +2,13 @@
 
 All notable fork-specific changes to `vangard-daz-mcp` are documented here. This fork's version scheme is `<upstream-version>+bb.<n>` — see [README.md#about-this-fork](README.md#about-this-fork). Upstream changes from [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server) are not duplicated here — only fork-specific fixes are tracked.
 
+## 0.5.0+bb.8 — 2026-09-02
+
+### Added
+
+- **`daz_find_actions(query)`** — search `DzActionMgr` by className/simpleText/description. Replaces the impossible `MainWindow.menuBar()` path (Bug-Katalog #14). Does not trigger actions.
+- **`daz_erc_freeze(...)`** — headless ERC Freeze via `new DzERCFreeze()` (Property Hierarchy plugin), not `DzERCFreezeAction.trigger()`.
+
 ## 0.5.0+bb.1 — 2026-08-30
 
 Fork baseline, based on `bluemoonfoundry/daz-mcp-server` at `0.5.0` (merge-base `0fa6f68`). Bundles fixes found while using the server for automated toon-shader (Filament-style) rendering of Genesis 8 characters.

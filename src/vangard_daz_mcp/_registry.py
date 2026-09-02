@@ -7958,6 +7958,136 @@ _FIND_NODES_SCRIPT = """\
 })()
 """
 
+_FIND_ACTIONS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var query = args.query === undefined || args.query === null ? "" : String(args.query);
+    if (!query) throw new Error("query is required");
+    var maxResults = parseInt(args.maxResults, 10);
+    if (isNaN(maxResults) || maxResults < 1) maxResults = 30;
+    if (maxResults > 100) maxResults = 100;
+    var q = query.toLowerCase();
+
+    var mgr = MainWindow.getActionMgr();
+    if (!mgr) throw new Error("MainWindow.getActionMgr() returned null");
+
+    var matches = [];
+    var n = mgr.getNumActions();
+    var i, a, cn, txt, desc, menu, group, hay;
+    for (i = 0; i < n; i++) {
+        a = mgr.getAction(i);
+        if (!a) continue;
+        cn = a.className();
+        txt = "";
+        desc = "";
+        menu = "";
+        group = "";
+        try { txt = String(a.simpleText || ""); } catch (e1) {}
+        try { desc = String(a.description || ""); } catch (e2) {}
+        try { menu = String(a.defaultMenu || ""); } catch (e3) {}
+        try { group = String(a.actionGroup || ""); } catch (e4) {}
+        hay = (cn + " " + txt + " " + desc + " " + menu + " " + group).toLowerCase();
+        if (hay.indexOf(q) === -1) continue;
+        matches.push({
+            className: cn,
+            simpleText: txt,
+            description: desc,
+            defaultMenu: menu,
+            actionGroup: group
+        });
+        if (matches.length >= maxResults) break;
+    }
+    return {
+        query: query,
+        count: matches.length,
+        scanned: n,
+        truncated: matches.length >= maxResults,
+        matches: matches
+    };
+})()
+"""
+
+_ERC_FREEZE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    if (typeof DzERCFreeze !== "function") {
+        throw new Error("DzERCFreeze is not available (enable the Property Hierarchy plugin)");
+    }
+    var controllerNode = resolveNode(args.controllerNode);
+    function matchName(item, name) {
+        return item.getLabel() === name || item.getName() === name;
+    }
+    function findProp(node, name) {
+        var i, pr, obj, m, ch, j;
+        for (i = 0; i < node.getNumProperties(); i++) {
+            pr = node.getProperty(i);
+            if (matchName(pr, name)) return pr;
+        }
+        obj = (typeof node.getObject === "function") ? node.getObject() : null;
+        if (!obj || typeof obj.getNumModifiers !== "function") return null;
+        for (i = 0; i < obj.getNumModifiers(); i++) {
+            m = obj.getModifier(i);
+            if (!m) continue;
+            if (matchName(m, name) && typeof m.getValueChannel === "function") {
+                ch = m.getValueChannel();
+                if (ch) return ch;
+            }
+            if (typeof m.getNumProperties === "function") {
+                for (j = 0; j < m.getNumProperties(); j++) {
+                    pr = m.getProperty(j);
+                    if (matchName(pr, name)) return pr;
+                }
+            }
+        }
+        return null;
+    }
+    var controllerProp = findProp(controllerNode, args.controllerProperty);
+    if (!controllerProp) {
+        throw new Error("Controller property not found: " + args.controllerProperty + " on " + args.controllerNode);
+    }
+    if (!controllerProp.inherits("DzNumericProperty")) {
+        throw new Error("Controller property is not numeric: " + args.controllerProperty);
+    }
+
+    var freeze = new DzERCFreeze();
+    freeze.setControllerNode(controllerNode);
+    freeze.setControllerProperty(controllerProp);
+    if (args.restoreFigure !== undefined) freeze.setRestoreFigure(!!args.restoreFigure);
+    if (args.restoreRigging !== undefined) freeze.setRestoreRigging(!!args.restoreRigging);
+    if (args.applyController !== undefined) freeze.setApplyController(!!args.applyController);
+    if (args.keyed !== undefined) freeze.setKeyed(!!args.keyed);
+
+    var freezeLabels = args.freezeNodes;
+    var added = [];
+    var k, fn, okAdd;
+    if (freezeLabels && freezeLabels.length) {
+        for (k = 0; k < freezeLabels.length; k++) {
+            fn = resolveNode(freezeLabels[k]);
+            okAdd = freeze.addPropertiesToFreeze(fn);
+            added.push({ node: fn.getLabel(), added: !!okAdd });
+        }
+    } else {
+        okAdd = freeze.addPropertiesToFreeze(controllerNode);
+        added.push({ node: controllerNode.getLabel(), added: !!okAdd });
+    }
+
+    var frozen = freeze.getPropertiesToFreeze();
+    var frozenCount = (frozen && typeof frozen.length !== "undefined") ? frozen.length : 0;
+    if (frozenCount === 0) {
+        throw new Error("No properties to freeze (values at default?). Change morphs/transforms first.");
+    }
+
+    var ok = freeze.doFreeze();
+    if (!ok) throw new Error("DzERCFreeze.doFreeze() returned false");
+    return {
+        success: true,
+        controllerNode: controllerNode.getLabel(),
+        controllerProperty: controllerProp.getLabel(),
+        freezeNodes: added,
+        propertiesFrozen: frozenCount
+    };
+})()
+"""
+
 _CREATE_STRAND_HAIR_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -8542,6 +8672,14 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-find-nodes": (
         "List every scene node matching a label or internal name, with elementIDs",
         _FIND_NODES_SCRIPT,
+    ),
+    "vangard-find-actions": (
+        "Search DzActionMgr actions by className/simpleText/description (no menuBar, no trigger)",
+        _FIND_ACTIONS_SCRIPT,
+    ),
+    "vangard-erc-freeze": (
+        "Headless ERC Freeze via DzERCFreeze (Property Hierarchy plugin), not DzERCFreezeAction",
+        _ERC_FREEZE_SCRIPT,
     ),
     # Phase 6.7: Strand-Based Hair
     "vangard-create-strand-hair": (
