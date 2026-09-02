@@ -7985,7 +7985,7 @@ _FIND_ACTIONS_SCRIPT = """\
         try { txt = String(a.simpleText || ""); } catch (e1) {}
         try { desc = String(a.description || ""); } catch (e2) {}
         try { menu = String(a.defaultMenu || ""); } catch (e3) {}
-        try { group = String(a.actionGroup() || ""); } catch (e4) {}
+        try { group = String(a.actionGroup || ""); } catch (e4) {}
         hay = (cn + " " + txt + " " + desc + " " + menu + " " + group).toLowerCase();
         if (hay.indexOf(q) === -1) continue;
         matches.push({

@@ -2,11 +2,11 @@
 
 All notable fork-specific changes to `vangard-daz-mcp` are documented here. This fork's version scheme is `<upstream-version>+bb.<n>` — see [README.md#about-this-fork](README.md#about-this-fork). Upstream changes from [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server) are not duplicated here — only fork-specific fixes are tracked.
 
-## 0.5.0+bb.9 — 2026-09-02
+## 0.5.0+bb.10 — 2026-09-02
 
 ### Fixed
 
-- **`daz_find_actions`** — `actionGroup` was read as a property (`a.actionGroup`) instead of called as a method (`a.actionGroup()`); per `daz_script_spec.d.ts`, `DzAction.actionGroup()` is a method, unlike the sibling `defaultMenu`/`description`/`simpleText` properties on the same class. Every match's `actionGroup` field returned the stringified function instead of the real group name.
+- **`daz_find_actions`** — reverted `bb.9`'s `actionGroup()` change. `daz_script_spec.d.ts` declares `DzAction.actionGroup()` as a method (parens), unlike its sibling `defaultMenu`/`description`/`simpleText` properties on the same class — but live against DS6 6.25, `actionGroup` is a genuine string **property**: `a.actionGroup()` throws `TypeError: ... is not a function` for all 875 actions, while `a.actionGroup` correctly returns values like `"Content Library"`, `"Geometry Editing"`, `"Inverse Kinematics"`. The spec was wrong for this member on this build; `bb.9` should never have shipped without a live check. Reverted to the original `a.actionGroup` property access.
 
 ## 0.5.0+bb.8 — 2026-09-02
 
