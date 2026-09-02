@@ -7958,6 +7958,100 @@ _FIND_NODES_SCRIPT = """\
 })()
 """
 
+_CREATE_STRAND_HAIR_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var targetLabel = args.targetNodeLabel;
+
+    var target = Scene.findNodeByLabel(targetLabel);
+    if (!target) target = Scene.findNode(targetLabel);
+    if (!target) throw new Error("Target node not found: " + targetLabel);
+
+    function strandHairLabels() {
+        var labels = [];
+        for (var i = 0; i < Scene.getNumNodes(); i++) {
+            var n = Scene.getNode(i);
+            if (n.inherits("DzStrandHairNode")) labels.push(n.getLabel());
+        }
+        return labels;
+    }
+
+    var before = strandHairLabels();
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzStrandHairCreateNodeAction");
+    if (!act) throw new Error("Action 'DzStrandHairCreateNodeAction' not found in DzActionMgr");
+
+    Scene.selectAllNodes(false);
+    target.select(true);
+
+    // This call blocks until the user confirms (or cancels) DAZ Studio's
+    // "Create Strand-Based Hair" dialog. That's expected — this script is
+    // meant to be run via the async endpoint so the HTTP caller doesn't
+    // block waiting for a human to click a button in the DAZ Studio window.
+    act.trigger();
+
+    var after = strandHairLabels();
+    var newLabels = [];
+    for (var i = 0; i < after.length; i++) {
+        if (before.indexOf(after[i]) === -1) newLabels.push(after[i]);
+    }
+
+    if (newLabels.length === 0) {
+        throw new Error(
+            "No new Strand-Based Hair node appeared after the action ran. " +
+            "The user likely cancelled the confirmation dialog, or DAZ Studio " +
+            "is still waiting for it to be confirmed."
+        );
+    }
+
+    var newNode = Scene.findNodeByLabel(newLabels[0]);
+    var obj = newNode.getObject();
+    var hasGeometry = !!obj;
+
+    return {
+        success: true,
+        node: newNode.getLabel(),
+        target: target.getLabel(),
+        has_geometry: hasGeometry
+    };
+})()
+"""
+
+_LIST_STRAND_HAIR_NODES_SCRIPT = """\
+(function(){
+    var result = [];
+    for (var i = 0; i < Scene.getNumNodes(); i++) {
+        var n = Scene.getNode(i);
+        if (!n.inherits("DzStrandHairNode")) continue;
+
+        var target = n.getTargetNode();
+        var obj = n.getObject();
+        var hasGeometry = !!obj;
+        var materials = [];
+        if (obj) {
+            var shape = obj.getCurrentShape();
+            if (shape) {
+                for (var m = 0; m < shape.getNumMaterials(); m++) {
+                    var mat = shape.getMaterial(m);
+                    var lbl = (typeof mat.getLabel === "function") ? mat.getLabel() : mat.getName();
+                    materials.push(lbl || mat.getName());
+                }
+            }
+        }
+
+        result.push({
+            label: n.getLabel(),
+            name: n.getName(),
+            target: target ? target.getLabel() : null,
+            has_geometry: hasGeometry,
+            materials: materials
+        });
+    }
+    return { count: result.length, nodes: result };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -8448,6 +8542,18 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-find-nodes": (
         "List every scene node matching a label or internal name, with elementIDs",
         _FIND_NODES_SCRIPT,
+    ),
+    # Phase 6.7: Strand-Based Hair
+    "vangard-create-strand-hair": (
+        "Create a native Strand-Based Hair node fit to a target figure via "
+        "DzStrandHairCreateNodeAction. BLOCKS on a DAZ Studio confirmation "
+        "dialog the user must click — always submit via the async endpoint",
+        _CREATE_STRAND_HAIR_SCRIPT,
+    ),
+    "vangard-list-strand-hair-nodes": (
+        "List every DzStrandHairNode in the scene with its target figure and "
+        "whether it has generated geometry yet",
+        _LIST_STRAND_HAIR_NODES_SCRIPT,
     ),
 }
 
