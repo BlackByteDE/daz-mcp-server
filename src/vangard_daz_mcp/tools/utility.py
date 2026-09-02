@@ -76,6 +76,11 @@ async def daz_execute(
 
     4. ✅ Environment node is ALWAYS Scene.getNode(1) - not findNodeByLabel()
 
+    5. ❌ NEVER use MainWindow.menuBar() — not Q_INVOKABLE (undefined on DS6).
+       ✅ MainWindow.getActionMgr().findAction("DzERCFreezeAction")
+       ✅ mgr.getMenu() walks DzActionMenu (item.label / item.action)
+       ✅ new DzERCFreeze() for headless ERC freeze — do not act.trigger()
+
     For detailed examples and documentation, use the daz_script_help tool first.
 
     Args:
@@ -150,6 +155,39 @@ async def daz_script_help(topic: str = "overview") -> str:
     content = doc.get("content", "No content available.")
 
     return f"# {title}\n\n{content}"
+
+
+@mcp.tool()
+async def daz_find_actions(
+    query: str,
+    max_results: int = 30,
+) -> dict[str, Any]:
+    """Search DAZ Studio actions without walking Qt menus.
+
+    ``MainWindow.menuBar()`` is not scriptable (not Q_INVOKABLE). Use this
+    instead of guessing menu APIs. Searches ``DzActionMgr`` by className,
+    simpleText, description, defaultMenu, and actionGroup.
+
+    Does **not** trigger actions — many ``Dz*Action`` classes open modal
+    dialogs and time out the script server.
+
+    Args:
+        query: Case-insensitive substring (e.g. ``"ERC Freeze"``,
+            ``"DzERCFreezeAction"``, ``"Transfer Utility"``).
+        max_results: Cap on returned matches (default 30, max 100).
+
+    Returns:
+        Dict with query, count, scanned, truncated, and
+        matches[{className, simpleText, description, defaultMenu, actionGroup}].
+
+    Examples:
+        daz_find_actions("ERC Freeze")
+        daz_find_actions("DzStrandHairCreateNodeAction")
+    """
+    return await _execute_by_id(
+        "vangard-find-actions",
+        {"query": query, "maxResults": max_results},
+    )
 
 
 # ---------------------------------------------------------------------------
