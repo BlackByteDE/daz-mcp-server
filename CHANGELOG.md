@@ -2,6 +2,12 @@
 
 All notable fork-specific changes to `vangard-daz-mcp` are documented here. This fork's version scheme is `<upstream-version>+bb.<n>` — see [README.md#about-this-fork](README.md#about-this-fork). Upstream changes from [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server) are not duplicated here — only fork-specific fixes are tracked.
 
+## 0.5.0+bb.9 — 2026-09-02
+
+### Fixed
+
+- **`daz_find_actions`** — `actionGroup` was read as a property (`a.actionGroup`) instead of called as a method (`a.actionGroup()`); per `daz_script_spec.d.ts`, `DzAction.actionGroup()` is a method, unlike the sibling `defaultMenu`/`description`/`simpleText` properties on the same class. Every match's `actionGroup` field returned the stringified function instead of the real group name.
+
 ## 0.5.0+bb.8 — 2026-09-02
 
 ### Added
