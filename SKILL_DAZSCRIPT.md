@@ -197,3 +197,28 @@ for (var k in SomeObject) {
 }
 return { methods: methods };
 ```
+
+### Morph Loader Pro (`DzMorphLoader`) — confirmed live
+Requires the Morph Loader Pro plugin active in the running instance (`typeof DzMorphLoader
+!== "function"` if not). Two gotchas confirmed by live testing (round-tripped a hand-built
+cube OBJ through `daz_load_morph_pro`):
+
+```javascript
+// setLoadMode(mode, node) validity depends on what node IS — wrong mode raises immediately:
+//   plain prop (no skeleton)        -> PrimaryNode only
+//   legacy (non-"single skin") figure -> EntireFigure, SelectedNodes, or PrimaryNode
+//   "single skin" figure            -> SingleSkinFigure or SingleSkinFigureFromGraft only
+// EntireFigure is NOT a safe default for props — check what kind of node you have first.
+
+// createMorph()/createMorphs() need RunSilent on the DzFileIOSettings passed in, same as
+// the OBJ importer, or DAZ Studio opens an OBJ import options dialog and blocks:
+var settings = new DzFileIOSettings();
+settings.setIntValue("RunSilent", 1);
+
+// BROKEN ASSUMPTION: setOverwriteExisting(MakeUnique) silently auto-renames on a name
+// collision. It does NOT — DAZ Studio opens a blocking interactive "morph already exists"
+// rename dialog regardless of RunSilent on the file settings. There is no known
+// FileIOSettings/loader flag that suppresses it. Avoid the collision instead of trying to
+// suppress the prompt: check daz_search_morphs/daz_list_morphs for the target name first
+// and pass one you know is unique.
+```
