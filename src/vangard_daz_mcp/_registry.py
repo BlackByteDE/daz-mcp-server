@@ -8171,6 +8171,180 @@ _SAVE_PROP_ASSET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
+# Phase 6.12: Morph Loader Pro
+_LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    if (typeof DzMorphLoader !== "function") {
+        throw new Error("DzMorphLoader is not available (enable the Morph Loader Pro plugin)");
+    }
+    if (!args.objPath) throw new Error("objPath is required");
+    var node = resolveNode(args.nodeLabel);
+
+    var LOAD_MODES = {
+        EntireFigure: 0, SelectedNodes: 1, PrimaryNode: 2,
+        SingleSkinFigure: 3, SingleSkinFigureFromGraft: 4
+    };
+    var MIRROR_TYPES = {
+        DoNotMirror: 0, XSwap: 1, XPosToNeg: 2, XNegToPos: 3,
+        YSwap: 4, YPosToNeg: 5, YNegToPos: 6, ZSwap: 7, ZPosToNeg: 8, ZNegToPos: 9
+    };
+    var OVERWRITE_MODES = { MakeUnique: 0, DeltasAndERCLinks: 1, DeltasOnly: 2 };
+    var SUBD_MAPPINGS = { Catmark: 0, FacetOrder: 1, ZBrushCage: 2, MudboxCage: 3 };
+    var ERC_TYPES = {
+        ERCDeltaAdd: 0, ERCDivideInto: 1, ERCDivideBy: 2,
+        ERCMultiply: 3, ERCSubtract: 4, ERCAdd: 5, ERCKeyed: 6
+    };
+
+    function lookupEnum(table, name, label) {
+        if (table[name] === undefined) {
+            var valid = [];
+            for (var k in table) valid.push(k);
+            throw new Error("Unknown " + label + ": " + name + ". Valid: " + valid.join(", "));
+        }
+        return table[name];
+    }
+
+    function matchName(item, name) {
+        return item.getLabel() === name || item.getName() === name;
+    }
+
+    function findProp(searchNode, name) {
+        var i, pr, obj, m, ch, j;
+        for (i = 0; i < searchNode.getNumProperties(); i++) {
+            pr = searchNode.getProperty(i);
+            if (matchName(pr, name)) return pr;
+        }
+        obj = (typeof searchNode.getObject === "function") ? searchNode.getObject() : null;
+        if (!obj || typeof obj.getNumModifiers !== "function") return null;
+        for (i = 0; i < obj.getNumModifiers(); i++) {
+            m = obj.getModifier(i);
+            if (!m) continue;
+            if (matchName(m, name) && typeof m.getValueChannel === "function") {
+                ch = m.getValueChannel();
+                if (ch) return ch;
+            }
+            if (typeof m.getNumProperties === "function") {
+                for (j = 0; j < m.getNumProperties(); j++) {
+                    pr = m.getProperty(j);
+                    if (matchName(pr, name)) return pr;
+                }
+            }
+        }
+        return null;
+    }
+
+    var loader = new DzMorphLoader();
+    loader.setFilename(args.objPath);
+    if (args.morphName) loader.setMorphName(String(args.morphName));
+
+    var loadModeVal = lookupEnum(LOAD_MODES, args.loadMode || "EntireFigure", "loadMode");
+    var okMode = loader.setLoadMode(loadModeVal, node);
+    if (!okMode) {
+        throw new Error("setLoadMode failed for mode " + args.loadMode + " on node " + node.getLabel());
+    }
+
+    loader.setOverwriteExisting(lookupEnum(OVERWRITE_MODES, args.overwriteMode || "MakeUnique", "overwriteMode"));
+    loader.setMorphMirroring(lookupEnum(MIRROR_TYPES, args.mirroring || "DoNotMirror", "mirroring"));
+
+    if (args.preserveExistingDeltas !== undefined) loader.setPreserveExistingDeltas(!!args.preserveExistingDeltas);
+    if (args.cleanUpOrphans !== undefined) loader.setCleanUpOrphans(!!args.cleanUpOrphans);
+    if (args.deltaTolerance !== undefined && args.deltaTolerance !== null) {
+        loader.setDeltaTolerance(parseFloat(args.deltaTolerance));
+    }
+
+    if (args.subdivision !== undefined) loader.setMorphSubdivision(!!args.subdivision);
+    if (args.subdivisionMapping) {
+        loader.setSubdivisionMapping(lookupEnum(SUBD_MAPPINGS, args.subdivisionMapping, "subdivisionMapping"));
+    }
+    if (args.subdivisionMinResolution !== undefined && args.subdivisionMinResolution !== null) {
+        loader.setSubdivisionMinResolution(parseInt(args.subdivisionMinResolution, 10));
+    }
+    if (args.subdivisionMaxResolution !== undefined && args.subdivisionMaxResolution !== null) {
+        loader.setSubdivisionMaxResolution(parseInt(args.subdivisionMaxResolution, 10));
+    }
+    if (args.subdivisionBuiltResolution !== undefined && args.subdivisionBuiltResolution !== null) {
+        loader.setSubdivisionBuiltResolution(parseInt(args.subdivisionBuiltResolution, 10));
+    }
+    if (args.subdivisionSmoothCage !== undefined) loader.setSubdivisionSmoothCage(!!args.subdivisionSmoothCage);
+
+    if (args.attenuateStrength !== undefined && args.attenuateStrength !== null) {
+        loader.setAttenuateStrength(parseFloat(args.attenuateStrength));
+    }
+    if (args.attenuateEdgeStrength !== undefined && args.attenuateEdgeStrength !== null) {
+        loader.setAttenuateEdgeStrength(parseFloat(args.attenuateEdgeStrength));
+    }
+    if (args.attenuateMapPath) loader.setAttenuateMapPath(String(args.attenuateMapPath));
+
+    if (args.propertyGroupPath) loader.setPropertyGroupPath(String(args.propertyGroupPath));
+    if (args.hideSecondaryProperties !== undefined) loader.setHideSecondaryProperties(!!args.hideSecondaryProperties);
+
+    // Attention (SDK docs): applyReverseDeformationsPose() must run before createMorph().
+    if (args.reverseDeformations) {
+        loader.setReverseDeformations(true);
+        if (args.reverseDeformationsPosePath) {
+            loader.setReverseDeformationsPose(String(args.reverseDeformationsPosePath));
+        }
+        var okPose = loader.applyReverseDeformationsPose();
+        if (!okPose) {
+            throw new Error("applyReverseDeformationsPose() failed — check reverseDeformationsPosePath");
+        }
+    }
+
+    var controlPropLabel = null;
+    if (args.createControlProperty) {
+        if (!args.controlPropertyName) {
+            throw new Error("controlPropertyName is required when createControlProperty is true");
+        }
+        var controlNode = args.controlNodeLabel ? resolveNode(args.controlNodeLabel) : node;
+        var controlProp = findProp(controlNode, args.controlPropertyName);
+        if (!controlProp) {
+            throw new Error("Control property not found: " + args.controlPropertyName + " on " + controlNode.getLabel());
+        }
+        if (!controlProp.inherits("DzNumericProperty")) {
+            throw new Error("Control property is not numeric: " + args.controlPropertyName);
+        }
+        loader.setCreateControlProperty(true);
+        loader.setControlNode(controlNode);
+        loader.setControlProperty(controlProp);
+        controlPropLabel = controlProp.getLabel();
+        if (args.controlPropertyCustomLabel) {
+            loader.setControlPropertyUseCustomLabel(true);
+            loader.setControlPropertyCustomLabel(String(args.controlPropertyCustomLabel));
+        }
+        if (args.controlPropertyErcType) {
+            loader.setControlPropertyERCType(
+                lookupEnum(ERC_TYPES, args.controlPropertyErcType, "controlPropertyErcType")
+            );
+        }
+        if (args.controlPropertyErcCustomValue !== undefined && args.controlPropertyErcCustomValue !== null) {
+            loader.setControlPropertyERCUseCustomValue(true);
+            loader.setControlPropertyERCCustomValue(parseFloat(args.controlPropertyErcCustomValue));
+        }
+    }
+
+    var settings = new DzFileIOSettings();
+    settings.setFloatValue("Scale", args.scale !== undefined ? parseFloat(args.scale) : 1.0);
+    settings.setIntValue("RunSilent", 1);
+
+    var onlyErrorsOrWarnings = args.onlyErrorsOrWarnings !== undefined ? !!args.onlyErrorsOrWarnings : true;
+    var log = loader.createMorph(settings, node, onlyErrorsOrWarnings, true);
+
+    var resolvedMorphName = loader.getMorphName();
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        file: args.objPath,
+        morphName: resolvedMorphName,
+        loadMode: args.loadMode || "EntireFigure",
+        overwriteMode: args.overwriteMode || "MakeUnique",
+        mirroring: args.mirroring || "DoNotMirror",
+        controlProperty: controlPropLabel,
+        log: log || ""
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -8675,6 +8849,13 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "a configured content directory via DzNodeSupportAssetFilter — headless "
         "equivalent of File > Save As > Support Asset > Prop Asset",
         _SAVE_PROP_ASSET_SCRIPT,
+    ),
+    # Phase 6.12: Morph Loader Pro
+    "vangard-load-morph-pro": (
+        "Load an OBJ morph target onto a node via DzMorphLoader (Morph Loader Pro "
+        "plugin) — full option set: load mode, mirroring, overwrite mode, reverse "
+        "deformations, subdivision mapping, attenuation maps, ERC control property",
+        _LOAD_MORPH_PRO_SCRIPT,
     ),
 }
 

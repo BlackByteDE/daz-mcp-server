@@ -42,6 +42,10 @@ Bug-Katalog: `C:\Users\Black-Byte\Development\pinkcharakter\docs\daz-mcp-bridge-
   Offset, Self Collide, Dynamics Strength, stiffness, etc.; Bug-Katalog #18)
 - **Phase 6.11:** Content-Library Asset Export — `daz_save_prop_asset` (headless
   `DzNodeSupportAssetFilter` Prop/Figure Support Asset export; Bug-Katalog #22 Teil 1)
+- **Phase 6.12:** Morph Loader Pro — `daz_load_morph_pro` (headless `DzMorphLoader` OBJ
+  morph-target import: load mode, mirroring, overwrite mode, reverse deformations,
+  subdivision mapping, attenuation maps, ERC control-property linking; harvested from
+  fork ebf444a)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

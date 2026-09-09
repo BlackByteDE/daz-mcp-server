@@ -1358,7 +1358,7 @@ wheels = [
 
 [[package]]
 name = "vangard-daz-mcp"
-version = "0.5.6"
+version = "0.5.7"
 source = { editable = "." }
 dependencies = [
     { name = "dazpy" },
