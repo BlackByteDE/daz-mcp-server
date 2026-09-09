@@ -2,6 +2,18 @@
 
 All notable fork-specific changes to `vangard-daz-mcp` are documented here. This fork's version scheme is `<upstream-version>+bb.<n>` — see [README.md#about-this-fork](README.md#about-this-fork). Upstream changes from [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server) are not duplicated here — only fork-specific fixes are tracked.
 
+## 0.5.0+bb.13 — 2026-09-09
+
+### Added
+
+- **`daz_save_wearable_preset(figure_label, output_path, dialog_timeout=30.0)`** — save a figure (with everything currently fit/parented to it) as a reusable Wearable(s) Preset, the fit-to-figure Content-Library asset type (Bug-Katalog #22 Teil 2). `DzWearablesAssetFilter.doSave()`, the script-API equivalent, reproducibly fails with an unexplained generic error under every configuration tried (see the bug entry for the full list of disproven hypotheses) — so this tool instead drives the real "File > Save As > Wearable(s) Preset" GUI action's two native dialogs directly via Windows UI Automation (`pywinauto`, new Windows-only dependency). No DAZ Studio window needs focus or foreground. Live-verified twice end-to-end against a real figure with a fitted test prop, fully reverted afterward.
+- New module `_ui_automation.py`: reusable helpers for driving native DAZ Studio dialogs that have no working headless scripting path — window discovery/polling by owning process, the `WM_COMMAND`/`BN_CLICKED`-to-dialog-not-button trick needed for the native "Filtered Save" common dialog's default button (confirmed live: neither UIA `Invoke()` nor `BM_CLICK` on the button itself works), and the UIA `ValuePattern`/`get_value()` vs. `window_text()` gotcha for that dialog's filename field (the latter always shows only the static label).
+
+### Notes
+
+- Bundles *every* item currently fit/parented to the target figure — the Options dialog's node-inclusion checklist has no confirmed programmatic toggle mechanism (custom-painted checkboxes, no `TogglePattern`). Unfit anything you don't want included first.
+- `pywinauto` is declared with a `platform_system == 'Windows'` marker; this tool raises a clear `ToolError` if unavailable rather than failing to import.
+
 ## 0.5.0+bb.12 — 2026-09-08
 
 ### Added
