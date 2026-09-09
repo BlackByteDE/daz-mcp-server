@@ -40,3 +40,17 @@ Use these for 5-10x speedup when changing 3+ items:
 - `daz_save_scene`, `daz_save_scene_copy`: Save current or copy scene.
 - `daz_get_selected_nodes`: Query current DAZ Studio selection.
 - `daz_delete_node`: Remove a node from the scene.
+
+## Strand-Based Hair
+- `daz_create_strand_hair(target_node_label)`: Creates a native Strand-Based Hair node
+  fit to a figure via `DzStrandHairCreateNodeAction` — the only DazScript path that
+  produces hair with real geometry. **Blocks on a DAZ Studio confirmation dialog a human
+  must click**, so this tool only exists as an async wrapper — it submits via the async
+  endpoint and returns a `request_id` immediately; poll with `daz_get_request_status` /
+  `daz_get_request_result`. See SKILL_DAZSCRIPT.md's "Do NOT use UI Actions/Menus" note —
+  this is the one confirmed exception, and it's only safe because it's async-only.
+- `daz_list_strand_hair_nodes`: Enumerate `DzStrandHairNode`s with target figure,
+  `has_geometry`, and material zone labels. Hair color/shader/thickness go through the
+  existing `daz_get_material` / `daz_set_material_property` tools against those zones —
+  no dedicated hair-material tool exists or is needed. Guide density/scraggle styling is
+  not scriptable at all (DAZ Studio Surfaces pane only).
