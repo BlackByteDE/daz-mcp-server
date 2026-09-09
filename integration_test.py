@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from fastmcp.exceptions import ToolError
 
 from vangard_daz_mcp.tools.animation import (
     daz_get_animation_info,
@@ -94,7 +95,7 @@ class Result:
 
 
 _results: list[Result] = []
-_verbose = False
+_verbose = False  # pylint: disable=invalid-name — toggled via `global` from CLI args, not a real constant
 
 
 def _pass(name: str, category: str, detail: str = "", elapsed_ms: float = 0.0) -> Result:
@@ -457,7 +458,6 @@ async def test_checkpoint_system(scene: dict) -> None:  # pylint: disable=unused
     # Confirm unknown name raises ToolError
     cat2 = cat
     name = "daz_restore_scene_state – unknown name raises error"
-    from fastmcp.exceptions import ToolError
     t0 = time.perf_counter()
     try:
         await daz_restore_scene_state("__nonexistent__")
@@ -526,7 +526,6 @@ async def test_async_render_tools() -> None:
                daz_list_requests())
 
     # Test status on a made-up ID returns 404 → ToolError
-    from fastmcp.exceptions import ToolError
     name = "daz_get_request_status – unknown id raises error"
     t0 = time.perf_counter()
     try:
@@ -591,7 +590,7 @@ def print_summary() -> int:
 
 async def main(host: str, port: int, verbose: bool) -> int:
     """Connect to DazScriptServer, run every test suite, print a summary, and return exit code."""
-    global _verbose
+    global _verbose  # pylint: disable=global-statement
     _verbose = verbose
 
     base_url = f"http://{host}:{port}"
