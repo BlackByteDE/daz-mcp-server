@@ -56,23 +56,31 @@ dev = [
 # integration_test.py's runner does the same for its own reason: it must keep
 # testing the remaining tools after one throws, so it can report a full pass/fail
 # summary. Confirmed by sampling; not a defect in either case.
-disable = ["broad-exception-caught"]
+# Rationale (daz-mcp-server-e2v): every hit of both checks is on a @mcp.tool()
+# function in tools/*.py, where the parameter list IS the tool's public schema
+# surface presented to the calling LLM -- e.g. daz_run_transfer_utility's 10
+# params or morph.py's daz_load_morph_pro's 30 are each one flag/option the
+# tool exposes, not a function doing too much internally. Splitting these into
+# a config object would only obscure the schema from the MCP client; confirmed
+# by sampling all 14 hits of each check before disabling.
+disable = ["broad-exception-caught", "too-many-arguments", "too-many-positional-arguments"]
 
 # redefined-outer-name and unused-argument are NOT disabled here. In tests/ they
 # are overwhelmingly the standard pytest-fixture-as-parameter idiom (e.g. every
 # test taking `live_client`), but in src/ a handful of hits are real -- e.g.
 # daz_browse_category's `sort_by` parameter is accepted but never passed through
 # to the underlying call. Blanket-disabling repo-wide would hide those. See
-# pylint.yml, which scopes the two test-idiom disables to tests/ only, and
-# daz-mcp-server-r13, which tracks auditing the remaining src/ hits individually.
+# pylint.yml, which scopes the two test-idiom disables to tests/ only.
+# daz-mcp-server-r13 audited every src/ unused-argument hit: all were real,
+# already fixed or tracked as their own bugs (daz-mcp-server-skr, -i2l).
 #
 # no-name-in-module / no-member are also left enabled: sampling showed these are
 # not dynamic-attribute false positives but real stale imports from the
-# pre-refactor `vangard_daz_mcp.server` module path (see daz-mcp-server-ful).
+# pre-refactor `vangard_daz_mcp.server` module path (see daz-mcp-server-ful,
+# since resolved).
 #
-# missing-*-docstring is left enabled: whether to write the ~491 missing
-# docstrings or suppress the check is a real team decision, not a false
-# positive to tune away (tracked in daz-mcp-server-dk7).
+# missing-*-docstring is left enabled: the ~491 missing docstrings were written
+# rather than suppressed (daz-mcp-server-dk7).
 
 [tool.pylint.similarities]
 # Rationale (daz-mcp-server-cw8): with pylint's default of 4, duplicate-code

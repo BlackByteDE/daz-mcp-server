@@ -29,8 +29,10 @@ try:
 except (OSError, json.JSONDecodeError):
     pass
 
-_macro_recording: bool = False
-_current_macro: dict[str, Any] | None = None
+# Mutable module state toggled via `global` in daz_start_recording()/
+# daz_stop_recording() below, not a real constant.
+_macro_recording: bool = False  # pylint: disable=invalid-name
+_current_macro: dict[str, Any] | None = None  # pylint: disable=invalid-name
 _macro_library: dict[str, dict[str, Any]] = {}
 _call_stats: dict[str, int] = {}
 
@@ -355,7 +357,7 @@ async def daz_validate_script(script: str) -> dict[str, Any]:
     warnings_list = []
     suggestions = []
 
-    _ANTI_PATTERNS = [
+    anti_patterns = [
         # (regex_fragment, is_error, message, suggestion)
         (
             "DzNewCameraAction",
@@ -410,7 +412,7 @@ async def daz_validate_script(script: str) -> dict[str, Any]:
     has_iife = "(function()" in script or "(function (" in script
 
     for line_idx, line in enumerate(lines, start=1):
-        for pattern, is_error, message, suggestion in _ANTI_PATTERNS:
+        for pattern, is_error, message, suggestion in anti_patterns:
             if re.search(pattern, line):
                 entry = {
                     "line": line_idx,
@@ -617,7 +619,7 @@ async def daz_start_recording(
         - Macros are stored in memory and lost when MCP server restarts
         - Use daz_replay_macro() to execute saved macros
     """
-    global _macro_recording, _current_macro
+    global _macro_recording, _current_macro  # pylint: disable=global-statement
 
     # Validate macro name
     if not macro_name or len(macro_name) > 64:

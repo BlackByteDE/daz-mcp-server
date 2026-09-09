@@ -262,7 +262,7 @@ async def daz_set_emotion(
         raise ToolError(
             f"Unknown emotion: '{emotion}'. Valid emotions: {', '.join(valid)}"
         )
-    if not (0.0 <= intensity <= 1.0):
+    if not 0.0 <= intensity <= 1.0:
         raise ToolError(f"intensity must be between 0.0 and 1.0, got {intensity}")
 
     definition = _EMOTION_DEFINITIONS[emotion]
@@ -307,7 +307,7 @@ async def daz_set_body_language(
         raise ToolError(
             f"Unknown posture: '{posture}'. Valid postures: {', '.join(valid_postures)}"
         )
-    if not (0.0 <= intensity <= 1.0):
+    if not 0.0 <= intensity <= 1.0:
         raise ToolError(f"intensity must be between 0.0 and 1.0, got {intensity}")
 
     script = """
