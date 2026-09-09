@@ -8103,6 +8103,74 @@ _ERC_FREEZE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
+# Content-Library Prop/Figure Support Asset export
+_SAVE_PROP_ASSET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    if (typeof DzNodeSupportAssetFilter !== "function") {
+        throw new Error("DzNodeSupportAssetFilter is not available in this DAZ Studio version.");
+    }
+    if (!args.outputPath) throw new Error("outputPath is required");
+    var node = resolveNode(args.nodeLabel);
+
+    // Normalize slashes for prefix comparison against configured content directories.
+    function norm(p) { return String(p).replace(/\\\\/g, "/").toLowerCase(); }
+    var outNorm = norm(args.outputPath);
+
+    var contentMgr = App.getContentMgr();
+    var baseDataPath = null;
+    var n = contentMgr.getNumContentDirectories();
+    var dirs = [];
+    for (var i = 0; i < n; i++) {
+        var dir = contentMgr.getContentDirectoryPath(i);
+        dirs.push(dir);
+        var dirNorm = norm(dir);
+        if (outNorm.indexOf(dirNorm) === 0) { baseDataPath = dir; }
+    }
+    if (!baseDataPath) {
+        throw new Error(
+            "outputPath must be inside a configured DAZ content directory. outputPath=" +
+            args.outputPath + " ; configured directories: " + dirs.join(", ")
+        );
+    }
+
+    var filter = new DzNodeSupportAssetFilter();
+    filter.setNode(node);
+
+    var settings = new DzFileIOSettings();
+    filter.getDefaultOptions(settings);
+    settings.setStringValue("RunSilent", "yes");
+    settings.setStringValue("BaseDataPath", baseDataPath);
+    settings.setStringValue("VendorName", args.vendorName || "Author");
+    settings.setStringValue("ProductName", args.productName || "Product");
+    settings.setStringValue("ItemName", args.itemName || node.getLabel());
+    if (args.category) settings.setStringValue("Category", args.category);
+    if (args.compatibilityBase) settings.setStringValue("CompatibilityBase", args.compatibilityBase);
+    if (args.compatibleWith) settings.setStringValue("CompatibleWith", args.compatibleWith);
+    if (args.smartParent !== undefined) settings.setStringValue("SmartParentProp", args.smartParent ? "yes" : "no");
+    if (args.writeGeometry !== undefined) settings.setStringValue("WriteGeometryDef", args.writeGeometry ? "yes" : "no");
+    if (args.writeParameters !== undefined) settings.setStringValue("WriteParameterDefs", args.writeParameters ? "yes" : "no");
+    if (args.writeUvs !== undefined) settings.setStringValue("WriteUVDefs", args.writeUvs ? "yes" : "no");
+    if (args.forceUniqueIds !== undefined) settings.setStringValue("ForceUniqueIDs", args.forceUniqueIds ? "yes" : "no");
+    if (args.compressOutput !== undefined) settings.setStringValue("CompressOutput", args.compressOutput ? "yes" : "no");
+
+    var err = filter.doSave(settings, args.outputPath, "");
+    var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;
+    if (errCode) {
+        throw new Error("DzNodeSupportAssetFilter.doSave failed (error code " + errCode + ") for node " + node.getLabel());
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        outputPath: args.outputPath,
+        baseDataPath: baseDataPath,
+        vendorName: args.vendorName || "Author",
+        productName: args.productName || "Product",
+        itemName: args.itemName || node.getLabel()
+    };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -8601,6 +8669,12 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-erc-freeze": (
         "Headless ERC Freeze via DzERCFreeze (Property Hierarchy plugin), not DzERCFreezeAction",
         _ERC_FREEZE_SCRIPT,
+    ),
+    "vangard-save-prop-asset": (
+        "Save a node as a DSON Figure/Prop Support Asset (.duf + .dsf geometry) into "
+        "a configured content directory via DzNodeSupportAssetFilter — headless "
+        "equivalent of File > Save As > Support Asset > Prop Asset",
+        _SAVE_PROP_ASSET_SCRIPT,
     ),
 }
 

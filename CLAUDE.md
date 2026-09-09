@@ -40,6 +40,8 @@ Bug-Katalog: `C:\Users\Black-Byte\Development\pinkcharakter\docs\daz-mcp-bridge-
 - **Phase 6.9:** dForce Surface Properties — `daz_get_dforce_surface_properties`,
   `daz_set_dforce_surface_property` (per-material `DzDForceSettingsProvider` — Collision
   Offset, Self Collide, Dynamics Strength, stiffness, etc.; Bug-Katalog #18)
+- **Phase 6.11:** Content-Library Asset Export — `daz_save_prop_asset` (headless
+  `DzNodeSupportAssetFilter` Prop/Figure Support Asset export; Bug-Katalog #22 Teil 1)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

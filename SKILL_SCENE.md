@@ -21,6 +21,11 @@ Use these for 5-10x speedup when changing 3+ items:
 - `daz_search_content`: Keyword search across the library.
 - `daz_load_file`, `daz_load_product`: Load by path or product name.
 - `daz_check_compatibility`: Verify an asset works with a given figure.
+- `daz_save_prop_asset`: Save a node as a reusable Prop/Figure Support Asset (`.duf` +
+  geometry) into a configured content directory — headless equivalent of
+  File > Save As > Support Asset > Prop Asset. `output_path` must resolve inside a
+  configured content directory (see SKILL_DAZSCRIPT.md's "Content-Library asset export"
+  section for the BaseDataPath/errCode 98 gotcha).
 
 ## Materials
 - `daz_list_materials`, `daz_get_material`: Inspect surfaces on a node.
