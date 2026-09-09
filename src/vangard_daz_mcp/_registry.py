@@ -7195,9 +7195,24 @@ _SET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
         throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
     }
 
-    var geom = obj && obj.getCachedGeom ? obj.getCachedGeom() : null;
-    if (!geom) throw new Error("No cached geometry found on node: " + nodeLabel);
-    var numVerts = geom.getNumVertices();
+    // The dForce simulation vertex count (modifier.getTargetVertexCount()) is NOT
+    // the same as the node's rendered/subdivided vertex count (getCachedGeom() —
+    // confirmed live to differ, e.g. 3401 vs 13456 on the same node). Weight maps
+    // must be sized to the simulation resolution, or setInfluenceWeights() silently
+    // replaces any existing (correctly-sized) map with a wrong-sized one.
+    var numVerts = modifier.getTargetVertexCount();
+    if (!numVerts) {
+        var existing = modifier.getInfluenceWeights();
+        numVerts = existing ? existing.getNumWeights() : 0;
+    }
+    if (!numVerts) {
+        throw new Error(
+            "Could not determine dForce simulation vertex count for '" + nodeLabel +
+            "' (modifier.getTargetVertexCount() returned 0 and no existing influence " +
+            "weights to infer it from). Run a dForce simulation on this node at least " +
+            "once first, then retry."
+        );
+    }
 
     var wm = new DzWeightMap();
     wm.setNumWeights(numVerts);
