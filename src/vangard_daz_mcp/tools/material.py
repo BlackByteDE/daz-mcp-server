@@ -17,6 +17,7 @@ _MAP_EXT = re.compile(r"\.(?:jpe?g|png|tiff?|gif|bmp|exr|hdr|dsf)$", re.I)
 
 
 def extract_preset_map_paths(preset_path: str) -> list[str]:
+    """Return every texture-map path referenced anywhere in a .duf/.dsf preset."""
     path = Path(preset_path)
     raw = path.read_bytes()
     if raw[:2] == b"\x1f\x8b":
@@ -245,7 +246,9 @@ async def daz_apply_material_preset(
 
 
 @mcp.tool()
-async def daz_convert_to_iray_uber(node_label: str, preset_path: str | None = None) -> dict[str, Any]:
+async def daz_convert_to_iray_uber(
+    node_label: str, preset_path: str | None = None
+) -> dict[str, Any]:
     """Upgrade every material zone on a node from DzDefaultMaterial to DzUberIrayMaterial.
 
     Content merged into a scene as raw DSON (a hand-authored .duf, or output from a

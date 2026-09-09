@@ -6585,7 +6585,8 @@ _SET_RENDER_OUTPUT_SCRIPT = """\
 """
 
 # args: {engine}
-# Returns: {success, engine, renderType, renderTypeName, activeRenderer, activeRendererClass, warning?}
+# Returns: {success, engine, renderType, renderTypeName, activeRenderer,
+#           activeRendererClass, warning?}
 # DS6 Engine dropdown is DzRenderOptions.renderType, not getActiveRenderer().
 _SET_RENDER_ENGINE_SCRIPT = """\
 (function(){
@@ -8820,7 +8821,8 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         _SET_RENDER_OUTPUT_SCRIPT,
     ),
     "vangard-set-render-engine": (
-        "Set DS6 render engine via DzRenderOptions.renderType (iray / multi_pass_opengl / viewport)",
+        "Set DS6 render engine via DzRenderOptions.renderType "
+        "(iray / multi_pass_opengl / viewport)",
         _SET_RENDER_ENGINE_SCRIPT,
     ),
     # Phase 5: Pose reset
