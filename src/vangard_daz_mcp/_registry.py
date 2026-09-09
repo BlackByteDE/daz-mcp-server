@@ -7110,6 +7110,56 @@ _SET_DFORCE_SURFACE_PROPERTY_SCRIPT = "(function(){\n" + _RESOLVE_DFORCE_PROVIDE
 })()
 """
 
+_ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function hasDforceModifier(host) {
+        if (!host || typeof host.getNumModifiers !== 'function') return false;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (mod.className && mod.className() === "DzDForceModifier") return true;
+        }
+        return false;
+    }
+
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (hasDforceModifier(node) || hasDforceModifier(obj)) {
+        return {
+            success: true,
+            node: node.getLabel(),
+            already_present: true,
+            modifier: "DzDForceModifier"
+        };
+    }
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzAddDForceModifierDynamicSurfaceAction");
+    if (!act) throw new Error("Action 'DzAddDForceModifierDynamicSurfaceAction' not found in DzActionMgr");
+
+    Scene.selectAllNodes(false);
+    node.select(true);
+    act.trigger();
+
+    obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (!hasDforceModifier(node) && !hasDforceModifier(obj)) {
+        throw new Error("Action triggered but no DzDForceModifier found on '" + nodeLabel + "' afterward");
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        already_present: false,
+        modifier: "DzDForceModifier"
+    };
+})()
+"""
+
 _COLLECT_POSE_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -8318,6 +8368,11 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         _UNFIT_ITEM_SCRIPT,
     ),
     # Phase 6.2: dForce simulation
+    "vangard-add-dforce-dynamic-surface": (
+        "Add a dForce Dynamic Surface modifier to a node via DzActionMgr "
+        "(Edit > Object > Geometry > Add dForce Modifier: Dynamic Surface)",
+        _ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT,
+    ),
     "vangard-run-dforce-simulation": (
         "Run dForce cloth/hair simulation (duration set by DAZ's own Simulation "
         "Settings, not scriptable), optionally limited to one node",
