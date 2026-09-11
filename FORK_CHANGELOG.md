@@ -6,6 +6,41 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.2 — 2026-09-12
+
+### Fixed
+
+- **`daz_create_camera`/`daz_create_light` left the new node's internal name
+  empty.** Confirmed live: `Scene.addNode()` on a script-created
+  `DzBasicCamera`/light does not auto-assign an internal name the way DAZ
+  Studio's UI does — `getName()` stays `""`. `daz_list_cameras`/`daz_list_lights`
+  (migrated to the `dazpy` library, which resolves nodes by that internal name)
+  then failed to look the node back up, showing a blank `label` for anything
+  created via these tools. Both create scripts now assign a unique internal
+  name via `setName()` right after `Scene.addNode()` (`setName()` does not
+  auto-dedupe on collision — confirmed live — so uniqueness is checked
+  manually against `Scene.findNode()`).
+- **`daz_list_cameras`/`daz_list_lights` never returned a `type` field**,
+  and were missing `position` (and, for lights, `flux`) — a leftover gap
+  from an incomplete migration off the original DazScript-registered
+  implementation onto `dazpy`. Rather than patching the `dazpy` path
+  piecemeal, both tools now call the already-registered, already-correct
+  `vangard-list-cameras`/`vangard-list-lights` scripts (previously dead
+  registry entries — nothing called them) — index-based, one HTTP round
+  trip instead of one-plus-N, and immune to the internal-name problem
+  above since they never resolve a node by name.
+- This bug predates the `0.5.8+bb.1` upstream merge (confirmed identical on
+  both sides of it) and is unrelated to any camera/light behavior upstream
+  changed — pure incomplete-migration leftover in this fork/upstream's
+  shared history.
+
+### Notes
+
+- Live-verified end to end: create → list → delete, for both cameras and
+  lights, with duplicate labels/names to exercise the dedup path.
+- 20/20 targeted camera/light integration tests green, 192/192 unit tests
+  green, both CI pylint gates green (9.75 / 9.97 at the 7.0 threshold).
+
 ## 0.5.8+bb.1 — 2026-09-11
 
 Rebasiert auf `bluemoonfoundry/daz-mcp-server` `0.5.8` (Merge von
