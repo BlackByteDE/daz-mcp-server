@@ -107,7 +107,10 @@ class TestErcFreeze:
 
     async def test_nothing_to_freeze_raises(self, mock_daz):
         mock_daz.post("/scripts/vangard-erc-freeze/execute").mock(
-            return_value=_fail("No properties to freeze (values at default?). Change morphs/transforms first.")
+            return_value=_fail(
+                "No properties to freeze (values at default?). "
+                "Change morphs/transforms first."
+            )
         )
         with pytest.raises(ToolError):
             await daz_erc_freeze("Genesis 8 Female", "MyShape")

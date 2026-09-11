@@ -3,46 +3,26 @@
 Bug-Katalog: `D:\Dev\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
 (Handoff-Notizen für die separate OpenCode-Session: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`)
 
-## Aktueller Stand (2026-08-30)
+## Fork-Versionsschema
 
-Version 0.5.0+bb.1 (bisher `0.5.2`, siehe Versionsschema unten) ist
-committed + gepusht (`d754ec7`, `5421aa5`, `origin` =
-`BlackByteDE/daz-mcp-server`). Behebt Bug-Katalog #4, #5, #7, #8, #12 —
-alle live gegen die laufende Daz-Studio-Instanz verifiziert.
+Dieser Fork (`BlackByteDE/daz-mcp-server`) nutzt `<upstream-version>+bb.<n>`
+(PEP 440 local version identifier). Der Teil vor dem `+` ist die
+Upstream-Version (`bluemoonfoundry/daz-mcp-server`), auf der der Fork gerade
+basiert — aktuell `0.5.8`. Der `bb.<n>`-Zähler zählt fork-eigene Releases
+unabhängig von Upstreams Versionierung hoch, damit es nie zu
+Versionskollisionen kommt. Bei jedem Rebase/Merge von `upstream/master` die
+Basis auf deren neue Version setzen und den Zähler auf `.1` zurücksetzen.
 
-**Versionsschema (ab 2026-08-30):** `<upstream-version>+bb.<n>` (PEP 440
-local version identifier). Der Teil vor dem `+` ist die Upstream-Version
-(`bluemoonfoundry/daz-mcp-server`), auf der dieser Fork gerade basiert —
-aktuell `0.5.0`. Der `bb.<n>`-Zähler zählt Fork-eigene Releases
-unabhängig von Upstreams eigener Versionierung hoch, damit es nie zu
-Versionskollisionen kommt. Bei jedem Rebase/Merge von `upstream/master`
-die Basis auf deren neue Version setzen und den Zähler auf `.1`
-zurücksetzen.
+**Regel:** Der `bb.<n>`-Zähler in `pyproject.toml` wird vor **jedem** `git
+push`, der inhaltliche Änderungen enthält, um 1 erhöht — auch bei mehreren
+kleinen Fix-Commits in einer Push-Session. Nach dem Bump lokal `uv sync`
+laufen lassen, damit das venv den neuen Versionsstand zieht, bevor gepusht
+wird.
 
-**Regel:** Der `bb.<n>`-Zähler in `pyproject.toml` wird vor **jedem**
-`git push`, der inhaltliche Änderungen enthält, um 1 erhöht — auch bei
-mehreren kleinen Fix-Commits in einer Push-Session. Nach dem Bump lokal
-`uv sync` laufen lassen, damit das venv den neuen Versionsstand zieht,
-bevor gepusht wird.
-
-## Aktueller Stand (2026-08-31)
-
-Vier Fix-Commits (`89bdc79`, `4a12478`, `ea08884`, `85ff8ea` — Bug-Katalog
-OBJ/dForce/ElementID/Material-Preset/BVH-Import) wurden gepusht, ohne den
-`bb`-Zähler zu erhöhen. Nachträglich korrigiert auf `0.5.0+bb.2`; `uv
-sync` danach erneut ausgeführt, venv zieht jetzt `0.5.0+bb.2`. Der
-`dazpy`-Versionsdrift aus dem 2026-08-30-Eintrag ist aufgelöst — `uv.lock`
-steht sauber auf `dazpy==2.9.0`, keine offene `uv.lock`-Änderung mehr.
-
-Der `5421aa5`-Fix (`daz_render_with_camera`-Symmetrie) ist weiterhin nur
-per Unit-Test abgesichert, noch nicht live nachgetestet.
-
-**Hinweis:** Am 2026-08-30 wurden die Commit-Hashes von `f5979b2`,
-`d899adb`, `1bc2069` und `e8165fa` per `filter-branch` + Force-Push neu
-geschrieben (`f40a7bf`, `3925ca7`, `d754ec7`, `5421aa5`), da die beiden
-älteren Commits fälschlich mit Autor "GSH" statt Black-Byte
-protokolliert waren. Alte Hashes aus früheren Notizen/Links sind damit
-ungültig.
+Fork-eigene Änderungen und die Fork-Historie sind in
+[FORK_CHANGELOG.md](FORK_CHANGELOG.md) dokumentiert. Upstream führt selbst
+keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
+`upstream/master`.
 
 ## Primary Commands
 - `uv sync` - Install dependencies
@@ -57,10 +37,10 @@ ungültig.
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.4.0
+- **Version:** 0.5.8+bb.1
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 142 tools registered across 13 tool modules.
-- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 13 modules so `@mcp.tool()` decorators fire at import time.
+- **Registry:** 154 tools registered across 14 tool modules.
+- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 14 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
 - **Phase 4.10:** Focus & DOF — `daz_set_focus_point`, `daz_animate_focus_pull`
@@ -69,7 +49,7 @@ ungültig.
 - **Phase 4.13:** Performance Timing — `daz_time_expression`, `daz_sync_character_beats`
 - **Phase 5:** Gap Coverage — `daz_list_materials`, `daz_get_material`, `daz_set_material_property`, `daz_set_morph`, `daz_delete_node`, `daz_list_lights`, `daz_create_light`, `daz_list_cameras`, `daz_create_camera`, `daz_save_scene`, `daz_get_selected_nodes`, `daz_set_render_output`, `daz_reset_pose`
 - **Phase 6.1:** Wardrobe — `daz_list_fitted_items`, `daz_fit_clothing`, `daz_unfit_item`
-- **Phase 6.2:** dForce Simulation — `daz_add_dforce_dynamic_surface`, `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
+- **Phase 6.2:** dForce Simulation — `daz_add_dforce_dynamic_surface`, `daz_set_dforce_influence_weights`, `daz_get_dforce_influence_weights`, `daz_run_dforce_simulation`, `daz_bake_simulation`, `daz_set_dforce_property`
 - **Phase 6.3:** Pose Library — `daz_save_pose`, `daz_load_pose`
 - **Phase 6.4:** Material Preset — `daz_apply_material_preset`, `daz_copy_material`
 - **Phase 6.5:** Figure Diagnostics — `daz_get_figure_info`, `daz_set_subdivision`
@@ -81,6 +61,17 @@ ungültig.
 - **Phase 6.9:** dForce Surface Properties — `daz_get_dforce_surface_properties`,
   `daz_set_dforce_surface_property` (per-material `DzDForceSettingsProvider` — Collision
   Offset, Self Collide, Dynamics Strength, stiffness, etc.; Bug-Katalog #18)
+- **Phase 6.11:** Content-Library Asset Export — `daz_save_prop_asset` (headless
+  `DzNodeSupportAssetFilter` Prop/Figure Support Asset export; Bug-Katalog #22 Teil 1)
+- **Phase 6.12:** Morph Loader Pro — `daz_load_morph_pro` (headless `DzMorphLoader` OBJ
+  morph-target import: load mode, mirroring, overwrite mode, reverse deformations,
+  subdivision mapping, attenuation maps, ERC control-property linking; harvested from
+  fork ebf444a)
+- **Phase 6.13:** Strand-Based Hair — `daz_create_strand_hair`, `daz_list_strand_hair_nodes`
+  (`DzStrandHairCreateNodeAction`; blockt auf einem Bestätigungsdialog — nur async submitten)
+- **Phase 6.14:** Wearable Preset Export *(fork-only)* — `daz_save_wearable_preset`
+  (Windows-UI-Automation über `pywinauto`, da `DzWearablesAssetFilter.doSave()` mit
+  generischem `errCode 98` fehlschlägt; Bug-Katalog #22 Teil 2)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

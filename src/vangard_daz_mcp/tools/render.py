@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any
 
 import httpx
@@ -723,7 +724,6 @@ async def daz_wait_for_request(
         ToolError: If the request failed or was cancelled.
         asyncio.TimeoutError: If the timeout is exceeded.
     """
-    import time
     deadline = time.monotonic() + timeout_seconds
 
     while True:

@@ -50,7 +50,9 @@ def mock_daz():
 class TestRunTransferUtility:
     async def test_successful_transfer(self, mock_daz):
         payload = {"success": True, "source": "Genesis 8 Female", "target": "Custom Hair Prop"}
-        mock_daz.post("/scripts/vangard-run-transfer-utility/execute").mock(return_value=_ok(payload))
+        mock_daz.post("/scripts/vangard-run-transfer-utility/execute").mock(
+            return_value=_ok(payload)
+        )
         result = await daz_run_transfer_utility("Genesis 8 Female", "Custom Hair Prop")
         assert result["success"] is True
         assert result["source"] == "Genesis 8 Female"
@@ -75,7 +77,9 @@ class TestRunTransferUtility:
     async def test_do_transfer_failure_raises(self, mock_daz):
         from fastmcp.exceptions import ToolError
         mock_daz.post("/scripts/vangard-run-transfer-utility/execute").mock(
-            return_value=_fail("DzTransferUtility.doTransfer() returned false (source: 'A', target: 'B')")
+            return_value=_fail(
+                "DzTransferUtility.doTransfer() returned false (source: 'A', target: 'B')"
+            )
         )
         with pytest.raises(ToolError):
             await daz_run_transfer_utility("A", "B")

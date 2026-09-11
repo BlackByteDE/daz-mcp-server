@@ -57,11 +57,15 @@ class TestGetDforceSurfaceProperties:
             "material": "Torso",
             "property_count": 2,
             "properties": [
-                {"name": "Collision Offset", "label": "Collision Offset", "type": "numeric", "value": 0.2},
-                {"name": "Self Collide", "label": "Self Collide", "type": "numeric", "value": 1},
+                {"name": "Collision Offset", "label": "Collision Offset",
+                 "type": "numeric", "value": 0.2},
+                {"name": "Self Collide", "label": "Self Collide",
+                 "type": "numeric", "value": 1},
             ],
         }
-        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(return_value=_ok(payload))
+        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(
+            return_value=_ok(payload)
+        )
         result = await daz_get_dforce_surface_properties("Genesis 8 Female", "Torso")
         assert result["material"] == "Torso"
         assert result["property_count"] == 2
@@ -69,7 +73,9 @@ class TestGetDforceSurfaceProperties:
     async def test_no_provider_raises(self, mock_daz):
         from fastmcp.exceptions import ToolError
         mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(
-            return_value=_fail("No dForce simulation settings for material 'Torso' on 'Genesis 8 Female'")
+            return_value=_fail(
+                "No dForce simulation settings for material 'Torso' on 'Genesis 8 Female'"
+            )
         )
         with pytest.raises(ToolError):
             await daz_get_dforce_surface_properties("Genesis 8 Female", "Torso")
@@ -79,9 +85,14 @@ class TestGetDforceSurfaceProperties:
 
         def capture(request, route):
             captured["args"] = json.loads(request.content).get("args", {})
-            return _ok({"node": "Hair", "material": "Fibers", "property_count": 0, "properties": []})
+            return _ok({
+                "node": "Hair", "material": "Fibers",
+                "property_count": 0, "properties": [],
+            })
 
-        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(side_effect=capture)
+        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(
+            side_effect=capture
+        )
         await daz_get_dforce_surface_properties("Hair")
         assert "materialName" not in captured["args"]
         assert captured["args"]["nodeLabel"] == "Hair"
@@ -91,9 +102,14 @@ class TestGetDforceSurfaceProperties:
 
         def capture(request, route):
             captured["args"] = json.loads(request.content).get("args", {})
-            return _ok({"node": "Outfit", "material": "Fabric", "property_count": 0, "properties": []})
+            return _ok({
+                "node": "Outfit", "material": "Fabric",
+                "property_count": 0, "properties": [],
+            })
 
-        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(side_effect=capture)
+        mock_daz.post("/scripts/vangard-get-dforce-surface-properties/execute").mock(
+            side_effect=capture
+        )
         await daz_get_dforce_surface_properties("Outfit", "Fabric")
         assert captured["args"]["materialName"] == "Fabric"
 
@@ -108,15 +124,21 @@ class TestSetDforceSurfaceProperty:
             "old_value": 0.2,
             "new_value": 0.5,
         }
-        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(return_value=_ok(payload))
-        result = await daz_set_dforce_surface_property("Outfit", "Collision Offset", 0.5, "Fabric")
+        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(
+            return_value=_ok(payload)
+        )
+        result = await daz_set_dforce_surface_property(
+            "Outfit", "Collision Offset", 0.5, "Fabric"
+        )
         assert result["success"] is True
         assert result["new_value"] == 0.5
 
     async def test_property_not_found_raises(self, mock_daz):
         from fastmcp.exceptions import ToolError
         mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(
-            return_value=_fail("Property 'Bogus' not found on dForce surface 'Torso'. Available: Friction, ...")
+            return_value=_fail(
+                "Property 'Bogus' not found on dForce surface 'Torso'. Available: Friction, ..."
+            )
         )
         with pytest.raises(ToolError):
             await daz_set_dforce_surface_property("Genesis 8 Female", "Bogus", 1.0)
@@ -131,7 +153,9 @@ class TestSetDforceSurfaceProperty:
                 "property": "Dynamics Strength", "old_value": 1.0, "new_value": 0.8,
             })
 
-        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(side_effect=capture)
+        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(
+            side_effect=capture
+        )
         await daz_set_dforce_surface_property("Hair", "Dynamics Strength", 0.8)
         args = captured["args"]
         assert "materialName" not in args
@@ -148,6 +172,10 @@ class TestSetDforceSurfaceProperty:
                 "property": "Self Collide", "old_value": 0, "new_value": 1,
             })
 
-        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(side_effect=capture)
-        await daz_set_dforce_surface_property("Outfit", "Self Collide", 1, material_name="Fabric")
+        mock_daz.post("/scripts/vangard-set-dforce-surface-property/execute").mock(
+            side_effect=capture
+        )
+        await daz_set_dforce_surface_property(
+            "Outfit", "Self Collide", 1, material_name="Fabric"
+        )
         assert captured["args"]["materialName"] == "Fabric"

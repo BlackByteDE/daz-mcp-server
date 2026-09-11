@@ -141,8 +141,12 @@ async def daz_run_transfer_utility(
 
     Examples:
         daz_run_transfer_utility("Genesis 8 Female", "Custom Hair Prop")
-        daz_run_transfer_utility("Genesis 9", "Bracelet", fit_to_figure=True, parent_to_figure=False)
-        daz_run_transfer_utility("Genesis 8 Female", "Cape", transfer_binding=True, transfer_morphs=False)
+        daz_run_transfer_utility(
+            "Genesis 9", "Bracelet", fit_to_figure=True, parent_to_figure=False
+        )
+        daz_run_transfer_utility(
+            "Genesis 8 Female", "Cape", transfer_binding=True, transfer_morphs=False
+        )
     """
     return await _execute_by_id(
         "vangard-run-transfer-utility",

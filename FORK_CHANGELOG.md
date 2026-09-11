@@ -1,6 +1,52 @@
-# Changelog
+# Fork Changelog
 
-All notable fork-specific changes to `vangard-daz-mcp` are documented here. This fork's version scheme is `<upstream-version>+bb.<n>` — see [README.md#about-this-fork](README.md#about-this-fork). Upstream changes from [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server) are not duplicated here — only fork-specific fixes are tracked.
+All notable fork-specific changes to `vangard-daz-mcp` are documented here.
+This fork's version scheme is `<upstream-version>+bb.<n>` — see
+[README.md#about-this-fork](README.md#about-this-fork). Upstream changes from
+[bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
+are not duplicated here — only fork-specific changes are listed below.
+
+## 0.5.8+bb.1 — 2026-09-11
+
+Rebasiert auf `bluemoonfoundry/daz-mcp-server` `0.5.8` (Merge von
+`upstream/master` `dc8a41e`; vorherige Fork-Basis war `0.5.0`, Merge-Base
+`0fa6f68`). Der `bb`-Zähler startet nach dem Basiswechsel wieder bei `.1`.
+
+### Changed
+
+- **Upstream hat den Großteil der Fork-Arbeit übernommen.** `daz_save_prop_asset`,
+  `daz_load_morph_pro` und die Strand-Based-Hair-Tools wurden von upstream
+  ausdrücklich aus diesem Fork geharvestet (PR #13, Beads `l1o`/`msn`/`a2y`);
+  `daz_find_actions`, `daz_erc_freeze`, `daz_run_transfer_utility`, die
+  dForce-Surface-Properties sowie die Bugfixes zu OBJ-Import, elementID-Auflösung,
+  Material-Presets und BVH-Import sind dort parallel entstanden. Bei diesen
+  Doppelentwicklungen wurde jeweils die Upstream-Fassung übernommen, um künftige
+  Merges konfliktarm zu halten — inhaltlich verifiziert identisch.
+- **Fork-eigene Tools nach dem Merge:** `daz_save_wearable_preset` (Phase 6.14,
+  Windows-UI-Automation) ist derzeit das einzige Tool, das es nur hier gibt.
+- `CHANGELOG.md` → `FORK_CHANGELOG.md` umbenannt (Konvention wie in
+  `daz-script-server`). Der Inhalt war bereits fork-spezifisch; upstream führt
+  selbst keinen Changelog, sodass der alte Name bei einem künftigen
+  Upstream-Changelog kollidiert wäre.
+- Die datierten „Aktueller Stand"-Abschnitte aus `CLAUDE.md` sind hierher
+  gewandert; in `CLAUDE.md` bleiben nur die aktiven Regeln (Versionsschema,
+  Bump-Regel), was die Konfliktfläche bei Upstream-Merges verkleinert.
+
+### Fixed
+
+- **`daz_set_dforce_influence_weights` nutzt jetzt die Simulations-Vertexzahl.**
+  Mit dem Upstream-Fix `e607f6b` wird die Weight-Map über
+  `modifier.getTargetVertexCount()` statt über die gerenderte/unterteilte
+  Geometrie (`getCachedGeom()`) dimensioniert — beide unterscheiden sich live
+  deutlich (z. B. 3401 vs. 13456 am selben Knoten), wodurch eine korrekt
+  dimensionierte Map bisher still durch eine falsch dimensionierte ersetzt wurde.
+
+### Notes
+
+- Tool-Zahl nach dem Merge: 154 Tools in 14 Modulen, 119 Registry-Skripte
+  (auf doppelte Registry-Keys und undefinierte Skriptreferenzen geprüft).
+- 192 Unit-Tests grün (`-m "not integration"`); Integrations- und
+  Render-Tests wurden nicht gegen eine laufende DAZ-Instanz nachgefahren.
 
 ## 0.5.0+bb.13 — 2026-09-09
 

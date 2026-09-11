@@ -6585,7 +6585,8 @@ _SET_RENDER_OUTPUT_SCRIPT = """\
 """
 
 # args: {engine}
-# Returns: {success, engine, renderType, renderTypeName, activeRenderer, activeRendererClass, warning?}
+# Returns: {success, engine, renderType, renderTypeName, activeRenderer,
+#           activeRendererClass, warning?}
 # DS6 Engine dropdown is DzRenderOptions.renderType, not getActiveRenderer().
 _SET_RENDER_ENGINE_SCRIPT = """\
 (function(){
@@ -6981,178 +6982,6 @@ _SET_DFORCE_PROPERTY_SCRIPT = """\
 })()
 """
 
-_ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
-(function(){
-    var args = getArguments()[0] || {};
-    var nodeLabel = args.nodeLabel;
-
-    var node = Scene.findNodeByLabel(nodeLabel);
-    if (!node) node = Scene.findNode(nodeLabel);
-    if (!node) throw new Error("Node not found: " + nodeLabel);
-
-    function hasDforceModifier(host) {
-        if (!host || typeof host.getNumModifiers !== 'function') return false;
-        for (var i = 0; i < host.getNumModifiers(); i++) {
-            var mod = host.getModifier(i);
-            if (mod.className && mod.className() === "DzDForceModifier") return true;
-        }
-        return false;
-    }
-
-    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
-    if (hasDforceModifier(node) || hasDforceModifier(obj)) {
-        return {
-            success: true,
-            node: node.getLabel(),
-            already_present: true,
-            modifier: "DzDForceModifier"
-        };
-    }
-
-    var mgr = MainWindow.getActionMgr();
-    var act = mgr.findAction("DzAddDForceModifierDynamicSurfaceAction");
-    if (!act) throw new Error("Action 'DzAddDForceModifierDynamicSurfaceAction' not found in DzActionMgr");
-
-    Scene.selectAllNodes(false);
-    node.select(true);
-    act.trigger();
-
-    obj = (typeof node.getObject === "function") ? node.getObject() : null;
-    if (!hasDforceModifier(node) && !hasDforceModifier(obj)) {
-        throw new Error("Action triggered but no DzDForceModifier found on '" + nodeLabel + "' afterward");
-    }
-
-    return {
-        success: true,
-        node: node.getLabel(),
-        already_present: false,
-        modifier: "DzDForceModifier"
-    };
-})()
-"""
-
-_SET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
-(function(){
-    var args = getArguments()[0] || {};
-    var nodeLabel = args.nodeLabel;
-    var defaultWeight = args.defaultWeight !== undefined ? parseFloat(args.defaultWeight) : 1.0;
-    var overrides = args.vertexWeights || {};
-
-    var node = Scene.findNodeByLabel(nodeLabel);
-    if (!node) node = Scene.findNode(nodeLabel);
-    if (!node) throw new Error("Node not found: " + nodeLabel);
-
-    function isDforceMod(mod) {
-        if (!mod) return false;
-        var cn = (mod.className ? mod.className() : "").toLowerCase();
-        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
-        if (typeof mod.findProperty === "function") {
-            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
-        }
-        return false;
-    }
-    function searchMods(host) {
-        if (!host || typeof host.getNumModifiers !== "function") return null;
-        for (var i = 0; i < host.getNumModifiers(); i++) {
-            var mod = host.getModifier(i);
-            if (isDforceMod(mod)) return mod;
-        }
-        return null;
-    }
-    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
-    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
-    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
-    if (!modifier) {
-        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
-    }
-
-    var geom = obj && obj.getCachedGeom ? obj.getCachedGeom() : null;
-    if (!geom) throw new Error("No cached geometry found on node: " + nodeLabel);
-    var numVerts = geom.getNumVertices();
-
-    var wm = new DzWeightMap();
-    wm.setNumWeights(numVerts);
-    for (var i = 0; i < numVerts; i++) {
-        wm.setFloatWeight(i, defaultWeight);
-    }
-
-    var overriddenCount = 0;
-    for (var key in overrides) {
-        var idx = parseInt(key, 10);
-        if (isNaN(idx) || idx < 0 || idx >= numVerts) continue;
-        wm.setFloatWeight(idx, parseFloat(overrides[key]));
-        overriddenCount++;
-    }
-
-    modifier.setInfluenceWeights(wm);
-
-    return {
-        success: true,
-        node: node.getLabel(),
-        vertex_count: numVerts,
-        default_weight: defaultWeight,
-        overridden_count: overriddenCount
-    };
-})()
-"""
-
-_GET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
-(function(){
-    var args = getArguments()[0] || {};
-    var nodeLabel = args.nodeLabel;
-
-    var node = Scene.findNodeByLabel(nodeLabel);
-    if (!node) node = Scene.findNode(nodeLabel);
-    if (!node) throw new Error("Node not found: " + nodeLabel);
-
-    function isDforceMod(mod) {
-        if (!mod) return false;
-        var cn = (mod.className ? mod.className() : "").toLowerCase();
-        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
-        if (typeof mod.findProperty === "function") {
-            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
-        }
-        return false;
-    }
-    function searchMods(host) {
-        if (!host || typeof host.getNumModifiers !== "function") return null;
-        for (var i = 0; i < host.getNumModifiers(); i++) {
-            var mod = host.getModifier(i);
-            if (isDforceMod(mod)) return mod;
-        }
-        return null;
-    }
-    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
-    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
-    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
-    if (!modifier) {
-        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
-    }
-
-    var wm = modifier.getInfluenceWeights();
-    if (!wm) {
-        return {
-            success: true,
-            node: node.getLabel(),
-            has_influence_weights: false,
-            weights: []
-        };
-    }
-
-    var n = wm.getNumWeights();
-    var weights = [];
-    for (var i = 0; i < n; i++) weights.push(wm.getFloatWeight(i));
-
-    return {
-        success: true,
-        node: node.getLabel(),
-        has_influence_weights: true,
-        vertex_count: n,
-        weights: weights
-    };
-})()
-"""
-
 _RUN_TRANSFER_UTILITY_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -7278,6 +7107,193 @@ _SET_DFORCE_SURFACE_PROPERTY_SCRIPT = "(function(){\n" + _RESOLVE_DFORCE_PROVIDE
         property: prop.getName(),
         old_value: oldValue,
         new_value: prop.getValue()
+    };
+})()
+"""
+
+_ADD_DFORCE_DYNAMIC_SURFACE_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function hasDforceModifier(host) {
+        if (!host || typeof host.getNumModifiers !== 'function') return false;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (mod.className && mod.className() === "DzDForceModifier") return true;
+        }
+        return false;
+    }
+
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (hasDforceModifier(node) || hasDforceModifier(obj)) {
+        return {
+            success: true,
+            node: node.getLabel(),
+            already_present: true,
+            modifier: "DzDForceModifier"
+        };
+    }
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzAddDForceModifierDynamicSurfaceAction");
+    if (!act) throw new Error("Action 'DzAddDForceModifierDynamicSurfaceAction' not found in DzActionMgr");
+
+    Scene.selectAllNodes(false);
+    node.select(true);
+    act.trigger();
+
+    obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    if (!hasDforceModifier(node) && !hasDforceModifier(obj)) {
+        throw new Error("Action triggered but no DzDForceModifier found on '" + nodeLabel + "' afterward");
+    }
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        already_present: false,
+        modifier: "DzDForceModifier"
+    };
+})()
+"""
+
+_SET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+    var defaultWeight = args.defaultWeight !== undefined ? parseFloat(args.defaultWeight) : 1.0;
+    var overrides = args.vertexWeights || {};
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function isDforceMod(mod) {
+        if (!mod) return false;
+        var cn = (mod.className ? mod.className() : "").toLowerCase();
+        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
+        if (typeof mod.findProperty === "function") {
+            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
+        }
+        return false;
+    }
+    function searchMods(host) {
+        if (!host || typeof host.getNumModifiers !== "function") return null;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (isDforceMod(mod)) return mod;
+        }
+        return null;
+    }
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
+    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
+    if (!modifier) {
+        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
+    }
+
+    // The dForce simulation vertex count (modifier.getTargetVertexCount()) is NOT
+    // the same as the node's rendered/subdivided vertex count (getCachedGeom() —
+    // confirmed live to differ, e.g. 3401 vs 13456 on the same node). Weight maps
+    // must be sized to the simulation resolution, or setInfluenceWeights() silently
+    // replaces any existing (correctly-sized) map with a wrong-sized one.
+    var numVerts = modifier.getTargetVertexCount();
+    if (!numVerts) {
+        var existing = modifier.getInfluenceWeights();
+        numVerts = existing ? existing.getNumWeights() : 0;
+    }
+    if (!numVerts) {
+        throw new Error(
+            "Could not determine dForce simulation vertex count for '" + nodeLabel +
+            "' (modifier.getTargetVertexCount() returned 0 and no existing influence " +
+            "weights to infer it from). Run a dForce simulation on this node at least " +
+            "once first, then retry."
+        );
+    }
+
+    var wm = new DzWeightMap();
+    wm.setNumWeights(numVerts);
+    for (var i = 0; i < numVerts; i++) {
+        wm.setFloatWeight(i, defaultWeight);
+    }
+
+    var overriddenCount = 0;
+    for (var key in overrides) {
+        var idx = parseInt(key, 10);
+        if (isNaN(idx) || idx < 0 || idx >= numVerts) continue;
+        wm.setFloatWeight(idx, parseFloat(overrides[key]));
+        overriddenCount++;
+    }
+
+    modifier.setInfluenceWeights(wm);
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        vertex_count: numVerts,
+        default_weight: defaultWeight,
+        overridden_count: overriddenCount
+    };
+})()
+"""
+
+_GET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var nodeLabel = args.nodeLabel;
+
+    var node = Scene.findNodeByLabel(nodeLabel);
+    if (!node) node = Scene.findNode(nodeLabel);
+    if (!node) throw new Error("Node not found: " + nodeLabel);
+
+    function isDforceMod(mod) {
+        if (!mod) return false;
+        var cn = (mod.className ? mod.className() : "").toLowerCase();
+        if (cn.indexOf("dforce") !== -1 || cn.indexOf("dynamics") !== -1) return true;
+        if (typeof mod.findProperty === "function") {
+            if (mod.findProperty("Freeze Simulation") || mod.findProperty("Dynamics Strength")) return true;
+        }
+        return false;
+    }
+    function searchMods(host) {
+        if (!host || typeof host.getNumModifiers !== "function") return null;
+        for (var i = 0; i < host.getNumModifiers(); i++) {
+            var mod = host.getModifier(i);
+            if (isDforceMod(mod)) return mod;
+        }
+        return null;
+    }
+    var obj = (typeof node.getObject === "function") ? node.getObject() : null;
+    var shape = obj && obj.getCurrentShape ? obj.getCurrentShape() : null;
+    var modifier = searchMods(node) || searchMods(obj) || searchMods(shape);
+    if (!modifier) {
+        throw new Error("No dForce modifier found on '" + nodeLabel + "'. Add one first with daz_add_dforce_dynamic_surface.");
+    }
+
+    var wm = modifier.getInfluenceWeights();
+    if (!wm) {
+        return {
+            success: true,
+            node: node.getLabel(),
+            has_influence_weights: false,
+            weights: []
+        };
+    }
+
+    var n = wm.getNumWeights();
+    var weights = [];
+    for (var i = 0; i < n; i++) weights.push(wm.getFloatWeight(i));
+
+    return {
+        success: true,
+        node: node.getLabel(),
+        has_influence_weights: true,
+        vertex_count: n,
+        weights: weights
     };
 })()
 """
@@ -8088,101 +8104,75 @@ _ERC_FREEZE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
-_CREATE_STRAND_HAIR_SCRIPT = """\
-(function(){
+# Content-Library Prop/Figure Support Asset export
+_SAVE_PROP_ASSET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
-    var targetLabel = args.targetNodeLabel;
-
-    var target = Scene.findNodeByLabel(targetLabel);
-    if (!target) target = Scene.findNode(targetLabel);
-    if (!target) throw new Error("Target node not found: " + targetLabel);
-
-    function strandHairLabels() {
-        var labels = [];
-        for (var i = 0; i < Scene.getNumNodes(); i++) {
-            var n = Scene.getNode(i);
-            if (n.inherits("DzStrandHairNode")) labels.push(n.getLabel());
-        }
-        return labels;
+    if (typeof DzNodeSupportAssetFilter !== "function") {
+        throw new Error("DzNodeSupportAssetFilter is not available in this DAZ Studio version.");
     }
+    if (!args.outputPath) throw new Error("outputPath is required");
+    var node = resolveNode(args.nodeLabel);
 
-    var before = strandHairLabels();
+    // Normalize slashes for prefix comparison against configured content directories.
+    function norm(p) { return String(p).replace(/\\\\/g, "/").toLowerCase(); }
+    var outNorm = norm(args.outputPath);
 
-    var mgr = MainWindow.getActionMgr();
-    var act = mgr.findAction("DzStrandHairCreateNodeAction");
-    if (!act) throw new Error("Action 'DzStrandHairCreateNodeAction' not found in DzActionMgr");
-
-    Scene.selectAllNodes(false);
-    target.select(true);
-
-    // This call blocks until the user confirms (or cancels) DAZ Studio's
-    // "Create Strand-Based Hair" dialog. That's expected — this script is
-    // meant to be run via the async endpoint so the HTTP caller doesn't
-    // block waiting for a human to click a button in the DAZ Studio window.
-    act.trigger();
-
-    var after = strandHairLabels();
-    var newLabels = [];
-    for (var i = 0; i < after.length; i++) {
-        if (before.indexOf(after[i]) === -1) newLabels.push(after[i]);
+    var contentMgr = App.getContentMgr();
+    var baseDataPath = null;
+    var n = contentMgr.getNumContentDirectories();
+    var dirs = [];
+    for (var i = 0; i < n; i++) {
+        var dir = contentMgr.getContentDirectoryPath(i);
+        dirs.push(dir);
+        var dirNorm = norm(dir);
+        if (outNorm.indexOf(dirNorm) === 0) { baseDataPath = dir; }
     }
-
-    if (newLabels.length === 0) {
+    if (!baseDataPath) {
         throw new Error(
-            "No new Strand-Based Hair node appeared after the action ran. " +
-            "The user likely cancelled the confirmation dialog, or DAZ Studio " +
-            "is still waiting for it to be confirmed."
+            "outputPath must be inside a configured DAZ content directory. outputPath=" +
+            args.outputPath + " ; configured directories: " + dirs.join(", ")
         );
     }
 
-    var newNode = Scene.findNodeByLabel(newLabels[0]);
-    var obj = newNode.getObject();
-    var hasGeometry = !!obj;
+    var filter = new DzNodeSupportAssetFilter();
+    filter.setNode(node);
+
+    var settings = new DzFileIOSettings();
+    filter.getDefaultOptions(settings);
+    settings.setStringValue("RunSilent", "yes");
+    settings.setStringValue("BaseDataPath", baseDataPath);
+    settings.setStringValue("VendorName", args.vendorName || "Author");
+    settings.setStringValue("ProductName", args.productName || "Product");
+    settings.setStringValue("ItemName", args.itemName || node.getLabel());
+    if (args.category) settings.setStringValue("Category", args.category);
+    if (args.compatibilityBase) settings.setStringValue("CompatibilityBase", args.compatibilityBase);
+    if (args.compatibleWith) settings.setStringValue("CompatibleWith", args.compatibleWith);
+    if (args.smartParent !== undefined) settings.setStringValue("SmartParentProp", args.smartParent ? "yes" : "no");
+    if (args.writeGeometry !== undefined) settings.setStringValue("WriteGeometryDef", args.writeGeometry ? "yes" : "no");
+    if (args.writeParameters !== undefined) settings.setStringValue("WriteParameterDefs", args.writeParameters ? "yes" : "no");
+    if (args.writeUvs !== undefined) settings.setStringValue("WriteUVDefs", args.writeUvs ? "yes" : "no");
+    if (args.forceUniqueIds !== undefined) settings.setStringValue("ForceUniqueIDs", args.forceUniqueIds ? "yes" : "no");
+    if (args.compressOutput !== undefined) settings.setStringValue("CompressOutput", args.compressOutput ? "yes" : "no");
+
+    var err = filter.doSave(settings, args.outputPath, "");
+    var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;
+    if (errCode) {
+        throw new Error("DzNodeSupportAssetFilter.doSave failed (error code " + errCode + ") for node " + node.getLabel());
+    }
 
     return {
         success: true,
-        node: newNode.getLabel(),
-        target: target.getLabel(),
-        has_geometry: hasGeometry
+        node: node.getLabel(),
+        outputPath: args.outputPath,
+        baseDataPath: baseDataPath,
+        vendorName: args.vendorName || "Author",
+        productName: args.productName || "Product",
+        itemName: args.itemName || node.getLabel()
     };
 })()
 """
 
-_LIST_STRAND_HAIR_NODES_SCRIPT = """\
-(function(){
-    var result = [];
-    for (var i = 0; i < Scene.getNumNodes(); i++) {
-        var n = Scene.getNode(i);
-        if (!n.inherits("DzStrandHairNode")) continue;
-
-        var target = n.getTargetNode();
-        var obj = n.getObject();
-        var hasGeometry = !!obj;
-        var materials = [];
-        if (obj) {
-            var shape = obj.getCurrentShape();
-            if (shape) {
-                for (var m = 0; m < shape.getNumMaterials(); m++) {
-                    var mat = shape.getMaterial(m);
-                    var lbl = (typeof mat.getLabel === "function") ? mat.getLabel() : mat.getName();
-                    materials.push(lbl || mat.getName());
-                }
-            }
-        }
-
-        result.push({
-            label: n.getLabel(),
-            name: n.getName(),
-            target: target ? target.getLabel() : null,
-            has_geometry: hasGeometry,
-            materials: materials
-        });
-    }
-    return { count: result.length, nodes: result };
-})()
-"""
-
-# Phase 6.10: Morph Loader Pro
+# Phase 6.12: Morph Loader Pro
 _LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
     if (typeof DzMorphLoader !== "function") {
@@ -8356,75 +8346,101 @@ _LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
-# Phase 6.11: Content-Library Prop/Figure Support Asset export
-_SAVE_PROP_ASSET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+_CREATE_STRAND_HAIR_SCRIPT = """\
+(function(){
     var args = getArguments()[0] || {};
-    if (typeof DzNodeSupportAssetFilter !== "function") {
-        throw new Error("DzNodeSupportAssetFilter is not available in this DAZ Studio version.");
-    }
-    if (!args.outputPath) throw new Error("outputPath is required");
-    var node = resolveNode(args.nodeLabel);
+    var targetLabel = args.targetNodeLabel;
 
-    // Normalize slashes for prefix comparison against configured content directories.
-    function norm(p) { return String(p).replace(/\\\\/g, "/").toLowerCase(); }
-    var outNorm = norm(args.outputPath);
+    var target = Scene.findNodeByLabel(targetLabel);
+    if (!target) target = Scene.findNode(targetLabel);
+    if (!target) throw new Error("Target node not found: " + targetLabel);
 
-    var contentMgr = App.getContentMgr();
-    var baseDataPath = null;
-    var n = contentMgr.getNumContentDirectories();
-    var dirs = [];
-    for (var i = 0; i < n; i++) {
-        var dir = contentMgr.getContentDirectoryPath(i);
-        dirs.push(dir);
-        var dirNorm = norm(dir);
-        if (outNorm.indexOf(dirNorm) === 0) { baseDataPath = dir; }
+    function strandHairLabels() {
+        var labels = [];
+        for (var i = 0; i < Scene.getNumNodes(); i++) {
+            var n = Scene.getNode(i);
+            if (n.inherits("DzStrandHairNode")) labels.push(n.getLabel());
+        }
+        return labels;
     }
-    if (!baseDataPath) {
+
+    var before = strandHairLabels();
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzStrandHairCreateNodeAction");
+    if (!act) throw new Error("Action 'DzStrandHairCreateNodeAction' not found in DzActionMgr");
+
+    Scene.selectAllNodes(false);
+    target.select(true);
+
+    // This call blocks until the user confirms (or cancels) DAZ Studio's
+    // "Create Strand-Based Hair" dialog. That's expected — this script is
+    // meant to be run via the async endpoint so the HTTP caller doesn't
+    // block waiting for a human to click a button in the DAZ Studio window.
+    act.trigger();
+
+    var after = strandHairLabels();
+    var newLabels = [];
+    for (var i = 0; i < after.length; i++) {
+        if (before.indexOf(after[i]) === -1) newLabels.push(after[i]);
+    }
+
+    if (newLabels.length === 0) {
         throw new Error(
-            "outputPath must be inside a configured DAZ content directory. outputPath=" +
-            args.outputPath + " ; configured directories: " + dirs.join(", ")
+            "No new Strand-Based Hair node appeared after the action ran. " +
+            "The user likely cancelled the confirmation dialog, or DAZ Studio " +
+            "is still waiting for it to be confirmed."
         );
     }
 
-    var filter = new DzNodeSupportAssetFilter();
-    filter.setNode(node);
-
-    var settings = new DzFileIOSettings();
-    filter.getDefaultOptions(settings);
-    settings.setStringValue("RunSilent", "yes");
-    settings.setStringValue("BaseDataPath", baseDataPath);
-    settings.setStringValue("VendorName", args.vendorName || "Author");
-    settings.setStringValue("ProductName", args.productName || "Product");
-    settings.setStringValue("ItemName", args.itemName || node.getLabel());
-    if (args.category) settings.setStringValue("Category", args.category);
-    if (args.compatibilityBase) settings.setStringValue("CompatibilityBase", args.compatibilityBase);
-    if (args.compatibleWith) settings.setStringValue("CompatibleWith", args.compatibleWith);
-    if (args.smartParent !== undefined) settings.setStringValue("SmartParentProp", args.smartParent ? "yes" : "no");
-    if (args.writeGeometry !== undefined) settings.setStringValue("WriteGeometryDef", args.writeGeometry ? "yes" : "no");
-    if (args.writeParameters !== undefined) settings.setStringValue("WriteParameterDefs", args.writeParameters ? "yes" : "no");
-    if (args.writeUvs !== undefined) settings.setStringValue("WriteUVDefs", args.writeUvs ? "yes" : "no");
-    if (args.forceUniqueIds !== undefined) settings.setStringValue("ForceUniqueIDs", args.forceUniqueIds ? "yes" : "no");
-    if (args.compressOutput !== undefined) settings.setStringValue("CompressOutput", args.compressOutput ? "yes" : "no");
-
-    var err = filter.doSave(settings, args.outputPath, "");
-    var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;
-    if (errCode) {
-        throw new Error("DzNodeSupportAssetFilter.doSave failed (error code " + errCode + ") for node " + node.getLabel());
-    }
+    var newNode = Scene.findNodeByLabel(newLabels[0]);
+    var obj = newNode.getObject();
+    var hasGeometry = !!obj;
 
     return {
         success: true,
-        node: node.getLabel(),
-        outputPath: args.outputPath,
-        baseDataPath: baseDataPath,
-        vendorName: args.vendorName || "Author",
-        productName: args.productName || "Product",
-        itemName: args.itemName || node.getLabel()
+        node: newNode.getLabel(),
+        target: target.getLabel(),
+        has_geometry: hasGeometry
     };
 })()
 """
 
-# Phase 6.12: Wearable Preset save trigger (Bug-Katalog #22 Teil 2)
+_LIST_STRAND_HAIR_NODES_SCRIPT = """\
+(function(){
+    var result = [];
+    for (var i = 0; i < Scene.getNumNodes(); i++) {
+        var n = Scene.getNode(i);
+        if (!n.inherits("DzStrandHairNode")) continue;
+
+        var target = n.getTargetNode();
+        var obj = n.getObject();
+        var hasGeometry = !!obj;
+        var materials = [];
+        if (obj) {
+            var shape = obj.getCurrentShape();
+            if (shape) {
+                for (var m = 0; m < shape.getNumMaterials(); m++) {
+                    var mat = shape.getMaterial(m);
+                    var lbl = (typeof mat.getLabel === "function") ? mat.getLabel() : mat.getName();
+                    materials.push(lbl || mat.getName());
+                }
+            }
+        }
+
+        result.push({
+            label: n.getLabel(),
+            name: n.getName(),
+            target: target ? target.getLabel() : null,
+            has_geometry: hasGeometry,
+            materials: materials
+        });
+    }
+    return { count: result.length, nodes: result };
+})()
+"""
+
+# Phase 6.14: Wearable Preset save trigger (Bug-Katalog #22 Teil 2)
 # Selects the target figure and fires DzWearablesAssetFilterAction. This
 # BLOCKS on two native dialogs (a file-save dialog, then a Qt options
 # dialog) — must be submitted via the async endpoint. The Python-side
@@ -8826,7 +8842,8 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         _SET_RENDER_OUTPUT_SCRIPT,
     ),
     "vangard-set-render-engine": (
-        "Set DS6 render engine via DzRenderOptions.renderType (iray / multi_pass_opengl / viewport)",
+        "Set DS6 render engine via DzRenderOptions.renderType "
+        "(iray / multi_pass_opengl / viewport)",
         _SET_RENDER_ENGINE_SCRIPT,
     ),
     # Phase 5: Pose reset
@@ -8847,19 +8864,6 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         _UNFIT_ITEM_SCRIPT,
     ),
     # Phase 6.2: dForce simulation
-    "vangard-run-dforce-simulation": (
-        "Run dForce cloth/hair simulation (duration set by DAZ's own Simulation "
-        "Settings, not scriptable), optionally limited to one node",
-        _RUN_DFORCE_SIMULATION_SCRIPT,
-    ),
-    "vangard-bake-simulation": (
-        "Bake dForce simulation results to keyframes so the simulated shape is preserved",
-        _BAKE_SIMULATION_SCRIPT,
-    ),
-    "vangard-set-dforce-property": (
-        "Set a dForce modifier property (stiffness, gravity scale, etc.) on a scene node",
-        _SET_DFORCE_PROPERTY_SCRIPT,
-    ),
     "vangard-add-dforce-dynamic-surface": (
         "Add a dForce Dynamic Surface modifier to a node via DzActionMgr "
         "(Edit > Object > Geometry > Add dForce Modifier: Dynamic Surface)",
@@ -8873,6 +8877,19 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-get-dforce-influence-weights": (
         "Read the per-vertex dForce influence (pinning) weights on a node",
         _GET_DFORCE_INFLUENCE_WEIGHTS_SCRIPT,
+    ),
+    "vangard-run-dforce-simulation": (
+        "Run dForce cloth/hair simulation (duration set by DAZ's own Simulation "
+        "Settings, not scriptable), optionally limited to one node",
+        _RUN_DFORCE_SIMULATION_SCRIPT,
+    ),
+    "vangard-bake-simulation": (
+        "Bake dForce simulation results to keyframes so the simulated shape is preserved",
+        _BAKE_SIMULATION_SCRIPT,
+    ),
+    "vangard-set-dforce-property": (
+        "Set a dForce modifier property (stiffness, gravity scale, etc.) on a scene node",
+        _SET_DFORCE_PROPERTY_SCRIPT,
     ),
     "vangard-run-transfer-utility": (
         "Project rigging/morphs/UVs/groups from a source node onto a target node "
@@ -8944,7 +8961,20 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "Headless ERC Freeze via DzERCFreeze (Property Hierarchy plugin), not DzERCFreezeAction",
         _ERC_FREEZE_SCRIPT,
     ),
-    # Phase 6.7: Strand-Based Hair
+    "vangard-save-prop-asset": (
+        "Save a node as a DSON Figure/Prop Support Asset (.duf + .dsf geometry) into "
+        "a configured content directory via DzNodeSupportAssetFilter — headless "
+        "equivalent of File > Save As > Support Asset > Prop Asset",
+        _SAVE_PROP_ASSET_SCRIPT,
+    ),
+    # Phase 6.12: Morph Loader Pro
+    "vangard-load-morph-pro": (
+        "Load an OBJ morph target onto a node via DzMorphLoader (Morph Loader Pro "
+        "plugin) — full option set: load mode, mirroring, overwrite mode, reverse "
+        "deformations, subdivision mapping, attenuation maps, ERC control property",
+        _LOAD_MORPH_PRO_SCRIPT,
+    ),
+    # Phase 6.13: Strand-Based Hair
     "vangard-create-strand-hair": (
         "Create a native Strand-Based Hair node fit to a target figure via "
         "DzStrandHairCreateNodeAction. BLOCKS on a DAZ Studio confirmation "
@@ -8955,20 +8985,6 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "List every DzStrandHairNode in the scene with its target figure and "
         "whether it has generated geometry yet",
         _LIST_STRAND_HAIR_NODES_SCRIPT,
-    ),
-    # Phase 6.10: Morph Loader Pro
-    "vangard-load-morph-pro": (
-        "Load an OBJ morph target onto a node via DzMorphLoader (Morph Loader Pro "
-        "plugin) — full option set: load mode, mirroring, overwrite mode, reverse "
-        "deformations, subdivision mapping, attenuation maps, ERC control property",
-        _LOAD_MORPH_PRO_SCRIPT,
-    ),
-    # Phase 6.11: Content-Library Prop/Figure Support Asset export
-    "vangard-save-prop-asset": (
-        "Save a node as a DSON Figure/Prop Support Asset (.duf + .dsf geometry) into "
-        "a configured content directory via DzNodeSupportAssetFilter — headless "
-        "equivalent of File > Save As > Support Asset > Prop Asset",
-        _SAVE_PROP_ASSET_SCRIPT,
     ),
     "vangard-trigger-wearable-save": (
         "Select a figure and fire DzWearablesAssetFilterAction (File > Save As > "
