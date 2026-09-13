@@ -5,12 +5,19 @@ import httpx
 
 
 async def _register_scripts(client: httpx.AsyncClient) -> None:
-    """Register all built-in scripts with DazScriptServer.
+    """Register all built-in scripts (upstream + fork-only) with DazScriptServer.
 
     Called at startup and automatically on 404 (DAZ Studio restarted and cleared
     the session registry). Silently skips remaining entries on connection failure.
+
+    Local import of _REGISTRY_FORK (rather than a top-level one) avoids a
+    circular import: _registry_fork.py imports _RESOLVE_NODE_JS back from
+    this module, so it can only be imported once this module has finished
+    executing at module load time.
     """
-    for script_id, (description, script_text) in _REGISTRY.items():
+    from ._registry_fork import _REGISTRY_FORK  # pylint: disable=import-outside-toplevel
+
+    for script_id, (description, script_text) in {**_REGISTRY, **_REGISTRY_FORK}.items():
         try:
             await client.post("/scripts/register", json={
                 "name": script_id,
@@ -8461,27 +8468,6 @@ _LIST_STRAND_HAIR_NODES_SCRIPT = """\
 })()
 """
 
-# Phase 6.14: Wearable Preset save trigger (Bug-Katalog #22 Teil 2)
-# Selects the target figure and fires DzWearablesAssetFilterAction. This
-# BLOCKS on two native dialogs (a file-save dialog, then a Qt options
-# dialog) — must be submitted via the async endpoint. The Python-side
-# tool (daz_save_wearable_preset, _ui_automation.py) drives those dialogs
-# via Windows UI Automation once this has fired; DzWearablesAssetFilter's
-# own doSave() script API reproducibly fails with an unexplained generic
-# error and is not used here (see docs/daz-mcp-bridge-bugs.md #22 Teil 2).
-_TRIGGER_WEARABLE_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
-    var args = getArguments()[0] || {};
-    var fig = resolveNode(args.figureLabel);
-    Scene.selectAllNodes(false);
-    fig.select(true);
-    var mgr = MainWindow.getActionMgr();
-    var act = mgr.findAction("DzWearablesAssetFilterAction");
-    if (!act) throw new Error("DzWearablesAssetFilterAction not found in DzActionMgr");
-    act.trigger();
-    return { success: true, figure: fig.getLabel() };
-})()
-"""
-
 # Registry entries: script_id → (description, script_text)
 # Registered with DazScriptServer on startup so high-level tools call by ID.
 _REGISTRY: dict[str, tuple[str, str]] = {
@@ -9007,11 +8993,9 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "whether it has generated geometry yet",
         _LIST_STRAND_HAIR_NODES_SCRIPT,
     ),
-    "vangard-trigger-wearable-save": (
-        "Select a figure and fire DzWearablesAssetFilterAction (File > Save As > "
-        "Wearable(s) Preset) — blocks on native dialogs, submit via async endpoint only; "
-        "daz_save_wearable_preset drives the resulting dialogs via UI Automation",
-        _TRIGGER_WEARABLE_SAVE_SCRIPT,
-    ),
+    # Fork-only tools (daz_save_wearable_preset, daz_create_child_bone,
+    # daz_set_skin_weights) live in _registry_fork.py, merged in below by
+    # _register_scripts() — kept out of this upstream-shared dict so future
+    # upstream/master merges never touch them.
 }
 

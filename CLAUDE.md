@@ -37,10 +37,10 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.1
+- **Version:** 0.5.8+bb.3
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 154 tools registered across 14 tool modules.
-- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 14 modules so `@mcp.tool()` decorators fire at import time.
+- **Registry:** 155 tools registered across 15 tool modules.
+- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
 - **Phase 4.10:** Focus & DOF — `daz_set_focus_point`, `daz_animate_focus_pull`
@@ -72,6 +72,9 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **Phase 6.14:** Wearable Preset Export *(fork-only)* — `daz_save_wearable_preset`
   (Windows-UI-Automation über `pywinauto`, da `DzWearablesAssetFilter.doSave()` mit
   generischem `errCode 98` fehlschlägt; Bug-Katalog #22 Teil 2)
+- **Phase 6.15:** Extra Bones / Skin Weights *(fork-only)* — `daz_create_child_bone`,
+  `daz_set_skin_weights` (`tools/rigging.py`; `DzSkinBinding.checkAndNormalize()` is the
+  fix for a runtime-created `DzBone`/`DzBoneBinding` not deforming the mesh; Bug-Katalog #30)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

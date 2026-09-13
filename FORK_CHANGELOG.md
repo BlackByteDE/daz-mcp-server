@@ -6,6 +6,54 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.3 — 2026-09-14
+
+### Added
+
+- **`daz_create_child_bone(parent_label, name, origin, endpoint=None)`** and
+  **`daz_set_skin_weights(figure_label, bone_weights)`** (`tools/rigging.py`,
+  Phase 6.15) — close Bug-Katalog #30. Root cause found live: a
+  runtime-created `DzBone` + `DzBoneBinding` reads its own weights back
+  correctly but is silently ignored by the deformer until
+  `DzSkinBinding.checkAndNormalize()` is called at least once afterward —
+  undocumented anywhere in the DAZ SDK reference. Both tools call it as
+  their last step and size every `DzWeightMap` against the figure's BASE
+  (un-subdivided) geometry vertex count, never `getCachedGeom()`, which
+  differs whenever SubDivision is active (same shape as the existing
+  dForce influence-weights gotcha). Live-verified against the reference
+  figure/bone chain from the bug report (`samor_1125_111_fitted_baked_rot`,
+  `hairTail1`–`5` under `head`) and, for the auto-renormalization behavior,
+  in isolation against `Genesis 8 Female`.
+- 9 new unit tests (`tests/test_rigging.py`).
+
+### Changed
+
+- **Split fork-only script registrations out of `_registry.py` into a new
+  `_registry_fork.py`.** `_registry.py` is shared with upstream and gets
+  rebased/merged regularly; keeping fork-only tools (`daz_save_wearable_preset`,
+  and now the two above) in a separate file means future `upstream/master`
+  merges never need to touch them. `_register_scripts()` merges
+  `_REGISTRY_FORK` in via a local import (avoids a circular import, since
+  `_registry_fork.py` imports `_RESOLVE_NODE_JS` back from `_registry.py`).
+  Net effect: `_registry.py` itself is now smaller than before this change,
+  not larger.
+
+### Notes
+
+- Tool count after this change: 155 tools in 15 modules (118 upstream-shared
+  registry scripts + 3 fork-only).
+- Full suite green: 379 passed, 159 skipped (integration, not run against
+  live DAZ Studio for this change), 0 failed.
+- **Process note for future test runs:** `uv run pytest tests/` alone does
+  **not** exclude `integration`-marked tests — `pyproject.toml`'s `addopts`
+  only excludes `slow`. Those tests only skip at runtime if DAZ Studio is
+  unreachable; if it's running (as it was during this session), running the
+  bare suite executes them for real against the live scene. This bit us
+  mid-session (`test_camera_integration.py`/`test_choreography_integration.py`
+  created real cameras and scene content in the user's live instance).
+  Always pass `-m "not integration"` for a plain regression check while DAZ
+  Studio might be live.
+
 ## 0.5.8+bb.2 — 2026-09-12
 
 ### Fixed

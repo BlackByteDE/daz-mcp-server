@@ -30,6 +30,22 @@ Tools for morphs, emotions, and movement.
 - `daz_get_figure_info`, `daz_set_subdivision`: Diagnostics and mesh LOD.
 - `daz_export_fbx`, `daz_export_obj`: Export figure/scene to interchange formats.
 
+## Rigging (Extra Bones) *(fork-only)*
+- `daz_create_child_bone(parent_label, name, origin, endpoint=None)`: Add a child
+  `DzBone` under an existing bone of a figure (e.g. `head`) with an (initially
+  empty) skin-binding weight map ready for `daz_set_skin_weights`.
+- `daz_set_skin_weights(figure_label, bone_weights)`: Write per-vertex general
+  skin weights (dense array or sparse `{index: weight}`) for one or more bones
+  and re-normalize the skin binding.
+- Use for hair-tail/ponytail jiggle rigs or any other runtime bone chain on a
+  fitted prop-turned-figure (see `daz_run_transfer_utility` to first convert a
+  plain prop into a `DzFigure` with a real skin binding). Both tools call
+  `DzSkinBinding.checkAndNormalize()` internally — without it, a
+  runtime-created bone binding is silently ignored by the deformer even
+  though its weights read back correctly (Bug-Katalog #30). See
+  SKILL_DAZSCRIPT.md's "Runtime bone rigging" section for the live-verified
+  details and the subdivision vertex-count gotcha.
+
 ## Action & Pathing
 - `daz_create_character_path`: Animate walking with auto-rotation.
 - `daz_arrange_characters`: Formations (semicircle, circle, line).

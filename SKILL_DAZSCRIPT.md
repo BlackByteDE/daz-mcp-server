@@ -313,3 +313,70 @@ win32gui.SendMessage(dialog_hwnd, win32con.WM_COMMAND, win32api.MAKELONG(1, 0), 
 # DAZ finishes writing the file a moment AFTER the dialog visually closes — poll
 # path.exists() briefly rather than checking once immediately after Accept.
 ```
+
+### Runtime bone rigging (`new DzBone` + `DzSkinBinding`) — confirmed live (Bug-Katalog #30)
+
+Adding a child bone to an existing figure at runtime (`new DzBone()` +
+`parent.addNodeChild(bone, true)` + `new DzBoneBinding()` +
+`skin.addBoneBinding(binding)` + `binding.setWeights(weightMap)`) all succeed
+without throwing, and `binding.getWeights()` reads the written values back
+correctly — but the deformer silently keeps using whatever it had cached
+before. Rotating the new bone does **nothing** to `getCachedGeom()` / the
+figure's WS bounding box, live-confirmed with `invalidate()`, `update()`,
+`skin.invalidate()`, and `obj.forceCacheUpdate(node, true)` all present and
+still no effect.
+
+```javascript
+// The missing call — DzSkinBinding has a normalize family that was never
+// tried: checkAndNormalize(), normalize(), invalidateBlendWeights(). Any one
+// of the three flips the same internal state; checkAndNormalize() is the
+// most semantically apt. Confirmed live: without it, a rotated bone leaves
+// getCachedGeom() completely unchanged; with it (called once, after adding
+// the binding and writing its weights), the same rotation moves the
+// weighted vertices as expected.
+skin.checkAndNormalize();
+
+// BROKEN as a fix (all tried live, all no-ops on their own):
+skin.invalidate();
+skin.update();
+obj.forceCacheUpdate(fig, true);   // note: first arg is the NODE, not a bool
+Scene.update();
+```
+
+The effect is **persistent** for the rest of the session once triggered —
+it flips state on the whole `DzSkinBinding`, not per bone-binding. A second,
+brand-new bone added afterward deforms correctly without needing its own
+`checkAndNormalize()` call, but call it after every weight-writing batch
+anyway (cheap, idempotent) since there is no live-confirmed case where it's
+guaranteed unnecessary.
+
+`checkAndNormalize()` also renormalizes competing weights at touched
+vertices automatically — confirmed live: a vertex initially 100% weighted to
+`head`, given a NEW weight of `0.7` on a sibling bone with `head`'s own
+weight left untouched at `1.0` (sum `1.7`), comes back after
+`checkAndNormalize()` as `head=0.3`, `newBone=0.7` (sum `1.0`). The new/just
+-written weight is treated as authoritative; do **not** manually zero out
+the parent bone's weight first — that would double-count against what
+`checkAndNormalize()` already does.
+
+**Vertex-count gotcha, same shape as the dForce `setInfluenceWeights`
+pitfall:** size every `DzWeightMap` to the figure's BASE (un-subdivided)
+geometry vertex count, never `getCachedGeom().getNumVertices()`:
+
+```javascript
+var shape = fig.getObject().getCurrentShape();
+var numVerts = shape.getGeometry().getNumVertices();   // correct — base cage
+// WRONG when SubDivision is active — this is the smoothed/output mesh,
+// a different (larger) count with different indexing:
+// var numVerts = fig.getObject().getCachedGeom().getNumVertices();
+```
+
+Live-measured on `Genesis 8 Female` with SubD active: base 16556 vertices vs.
+65806 cached — a `DzWeightMap` sized/indexed against the cached count is
+silently wrong for the base-resolution skin binding.
+
+MCP tools: `daz_create_child_bone(parent_label, name, origin, endpoint=None)`
+and `daz_set_skin_weights(figure_label, bone_weights)` in
+`daz-mcp-server/src/vangard_daz_mcp/tools/rigging.py` — both call
+`checkAndNormalize()` internally and size weight maps against the base
+geometry, so callers don't need to replicate any of the above by hand.
