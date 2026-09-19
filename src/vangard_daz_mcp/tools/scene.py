@@ -549,3 +549,89 @@ async def daz_list_geometry_shells() -> dict[str, Any]:
         #     "materials": ["Torso", "Legs", ...]}]}
     """
     return await _execute_by_id("vangard-list-geometry-shells")
+
+
+# ---------------------------------------------------------------------------
+# Shell face-group visibility (Bug-Katalog #35 workaround)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def daz_get_shell_visibility(shell_label: str) -> dict[str, Any]:
+    """List per-face-group visibility toggles on a Geometry Shell node.
+
+    ⚠️ This does NOT read Geometry-Editor "hide face group" state on a
+    regular mesh/prop — no DazScript API exposes that (Bug-Katalog #35). It
+    only reads a Geometry Shell node's own face-group visibility toggles.
+    If the node you care about isn't already a shell, create one over it
+    first with daz_create_geometry_shell(target_node_label), then call this
+    on the shell.
+
+    Geometry Shell nodes (see daz_create_geometry_shell) expose one real,
+    scriptable ``DzBoolProperty`` per face group of the shelled geometry,
+    named ``facet_group_<name>_vis`` and grouped under "/Shell/Visibility/
+    Face Groups" in the Parameters pane. This is the *only* place in DAZ
+    Studio's scripting API where a face-group hide/show state is exposed as
+    a queryable property — a plain mesh/prop hidden via the Geometry Editor
+    has no equivalent at all (Bug-Katalog #35: ``DzFacetMesh``/``DzFacet``/
+    ``DzFacetShape`` expose no hidden-state accessor, confirmed live).
+
+    Use this as a scriptable substitute for Geometry-Editor hiding: create a
+    Geometry Shell over the item whose parts you'd otherwise hide, then
+    toggle its face groups instead of the original mesh's — that state
+    round-trips through daz_get_shell_visibility / daz_set_shell_visibility
+    and persists in the saved .duf.
+
+    Args:
+        shell_label: Display label or internal name of a DzGeometryShellNode
+                     (e.g. from daz_list_geometry_shells).
+
+    Returns:
+        Dict with:
+        - node: shell's display label
+        - count: number of face groups
+        - groups: list of {name (internal, e.g. "facet_group_lShoulder_vis"),
+                  label (face group name, e.g. "lShoulder"), visible (bool)}
+
+    Raises:
+        ToolError: if the node isn't a DzGeometryShellNode.
+    """
+    return await _execute_by_id("vangard-get-shell-visibility", {"shellLabel": shell_label})
+
+
+@mcp.tool()
+async def daz_set_shell_visibility(
+    shell_label: str,
+    group_visibility: dict[str, bool],
+) -> dict[str, Any]:
+    """Set per-face-group visibility toggles on a Geometry Shell node.
+
+    ⚠️ This does NOT set Geometry-Editor "hide face group" state on a
+    regular mesh/prop — no DazScript API exposes that (Bug-Katalog #35). It
+    only writes a Geometry Shell node's own face-group visibility toggles.
+    If the node you care about isn't already a shell, create one over it
+    first with daz_create_geometry_shell(target_node_label), then call this
+    on the shell.
+
+    See daz_get_shell_visibility for background — this is the write side of
+    the same ``facet_group_<name>_vis`` properties.
+
+    Args:
+        shell_label: Display label or internal name of a DzGeometryShellNode.
+        group_visibility: Mapping of face group name (either the plain label,
+            e.g. "lShoulder", or the internal property id, e.g.
+            "facet_group_lShoulder_vis") to the desired visible state.
+
+    Returns:
+        Dict with:
+        - node: shell's display label
+        - applied: list of {group, name, visible} successfully changed
+        - errors: list of strings for keys that matched no face group
+
+    Examples:
+        daz_set_shell_visibility("V Neck Shell", {"lShoulder": False, "Neck": False})
+    """
+    return await _execute_by_id("vangard-set-shell-visibility", {
+        "shellLabel": shell_label,
+        "groupVisibility": group_visibility,
+    })

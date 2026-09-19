@@ -8434,98 +8434,6 @@ _CREATE_STRAND_HAIR_SCRIPT = """\
 })()
 """
 
-_CREATE_GEOMETRY_SHELL_SCRIPT = """\
-(function(){
-    var args = getArguments()[0] || {};
-    var targetLabel = args.targetNodeLabel;
-
-    var target = Scene.findNodeByLabel(targetLabel);
-    if (!target) target = Scene.findNode(targetLabel);
-    if (!target) throw new Error("Target node not found: " + targetLabel);
-
-    function shellLabels() {
-        var labels = [];
-        for (var i = 0; i < Scene.getNumNodes(); i++) {
-            var n = Scene.getNode(i);
-            if (n.inherits("DzGeometryShellNode")) labels.push(n.getLabel());
-        }
-        return labels;
-    }
-
-    var before = shellLabels();
-
-    var mgr = MainWindow.getActionMgr();
-    var act = mgr.findAction("DzNewGeometryShellAction");
-    if (!act) throw new Error("Action 'DzNewGeometryShellAction' not found in DzActionMgr");
-
-    Scene.selectAllNodes(false);
-    target.select(true);
-
-    // Like DzStrandHairCreateNodeAction (see vangard-create-strand-hair),
-    // this blocks until a human confirms/cancels DAZ Studio's own dialog —
-    // meant to be run via the async endpoint, never synchronously.
-    act.trigger();
-
-    var after = shellLabels();
-    var newLabels = [];
-    for (var i = 0; i < after.length; i++) {
-        if (before.indexOf(after[i]) === -1) newLabels.push(after[i]);
-    }
-
-    if (newLabels.length === 0) {
-        throw new Error(
-            "No new Geometry Shell node appeared after the action ran. " +
-            "The user likely cancelled the confirmation dialog, or DAZ Studio " +
-            "is still waiting for it to be confirmed."
-        );
-    }
-
-    var newNode = Scene.findNodeByLabel(newLabels[0]);
-    var obj = newNode.getObject();
-
-    return {
-        success: true,
-        node: newNode.getLabel(),
-        target: target.getLabel(),
-        has_geometry: !!obj
-    };
-})()
-"""
-
-_LIST_GEOMETRY_SHELLS_SCRIPT = """\
-(function(){
-    var result = [];
-    for (var i = 0; i < Scene.getNumNodes(); i++) {
-        var n = Scene.getNode(i);
-        if (!n.inherits("DzGeometryShellNode")) continue;
-
-        var target = n.getTarget();
-        var obj = n.getObject();
-        var hasGeometry = !!obj;
-        var materials = [];
-        if (obj) {
-            var shape = obj.getCurrentShape();
-            if (shape) {
-                for (var m = 0; m < shape.getNumMaterials(); m++) {
-                    var mat = shape.getMaterial(m);
-                    var lbl = (typeof mat.getLabel === "function") ? mat.getLabel() : mat.getName();
-                    materials.push(lbl || mat.getName());
-                }
-            }
-        }
-
-        result.push({
-            label: n.getLabel(),
-            name: n.getName(),
-            target: target ? target.getLabel() : null,
-            has_geometry: hasGeometry,
-            materials: materials
-        });
-    }
-    return { count: result.length, nodes: result };
-})()
-"""
-
 _LIST_STRAND_HAIR_NODES_SCRIPT = """\
 (function(){
     var result = [];
@@ -9087,23 +8995,11 @@ _REGISTRY: dict[str, tuple[str, str]] = {
         "whether it has generated geometry yet",
         _LIST_STRAND_HAIR_NODES_SCRIPT,
     ),
-    # Phase 6.16: Geometry Shell (Bug-Katalog #31)
-    "vangard-create-geometry-shell": (
-        "Create a native Geometry Shell node on a target node via "
-        "DzNewGeometryShellAction. BLOCKS on a DAZ Studio confirmation "
-        "dialog — always submit via the async endpoint; the "
-        "daz_create_geometry_shell MCP tool confirms the dialog itself "
-        "via Windows UI Automation, no human click needed",
-        _CREATE_GEOMETRY_SHELL_SCRIPT,
-    ),
-    "vangard-list-geometry-shells": (
-        "List every DzGeometryShellNode in the scene with its target node and "
-        "whether it has generated geometry yet",
-        _LIST_GEOMETRY_SHELLS_SCRIPT,
-    ),
     # Fork-only tools (daz_save_wearable_preset, daz_create_child_bone,
-    # daz_set_skin_weights) live in _registry_fork.py, merged in below by
-    # _register_scripts() — kept out of this upstream-shared dict so future
-    # upstream/master merges never touch them.
+    # daz_set_skin_weights, daz_create_geometry_shell, daz_list_geometry_shells,
+    # daz_get_shell_visibility, daz_set_shell_visibility) live in
+    # _registry_fork.py, merged in below by _register_scripts() — kept out
+    # of this upstream-shared dict so future upstream/master merges never
+    # touch them.
 }
 

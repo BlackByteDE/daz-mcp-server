@@ -6,6 +6,39 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.6 — 2026-09-20
+
+### Added
+
+- **`daz_get_shell_visibility(shell_label)`** and
+  **`daz_set_shell_visibility(shell_label, group_visibility)`**
+  (`tools/scene.py`) — workaround for Bug-Katalog #35 (no way to read/write
+  a face group's hidden state on a plain mesh/prop via DazScript). Live
+  investigation found that `DzGeometryShellNode`s uniquely expose one real
+  `DzBoolProperty` per face group (`facet_group_<name>_vis`, grouped under
+  "/Shell/Visibility/Face Groups"), confirmed both in a saved `.duf`
+  (`node_library` `studio_node_channels` extra) and live via
+  `daz_execute`/`getNumProperties()` against a freshly created shell — no
+  such property exists on the shelled node itself or on any other node
+  type. Does not solve hiding on an arbitrary already-hidden mesh directly;
+  the practical workaround is to put a Geometry Shell over the item and
+  toggle its face groups instead of the Geometry Editor's hide, since that
+  state is now readable/writable and persists in the `.duf`.
+
+### Changed
+
+- **Moved `daz_create_geometry_shell`/`daz_list_geometry_shells`'s DazScript
+  fragments and registry entries from `_registry.py` into
+  `_registry_fork.py`.** They were added to the upstream-shared file by
+  mistake in `e8767d2` (2026-09-19, Bug-Katalog #31) despite being
+  fork-only tools — `_registry.py` is net smaller after this move, not
+  larger. Same rationale as the `bb.3` split below: keeps future
+  `upstream/master` merges from ever needing to touch fork-added tools.
+
+### Notes
+
+- Tool count after this change: 159 tools in 15 modules.
+
 ## 0.5.8+bb.3 — 2026-09-14
 
 ### Added

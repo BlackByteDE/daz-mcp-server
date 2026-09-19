@@ -69,3 +69,11 @@ Use these for 5-10x speedup when changing 3+ items:
   "Do NOT use UI Actions/Menus" note for the underlying dialog-blocking behavior.
 - `daz_list_geometry_shells()`: Enumerate `DzGeometryShellNode`s with target node,
   `has_geometry`, and material zone labels (same shape as `daz_list_strand_hair_nodes`).
+- `daz_get_shell_visibility(shell_label)` / `daz_set_shell_visibility(shell_label,
+  group_visibility)`: Read/write a Geometry Shell's per-face-group
+  `facet_group_<name>_vis` bool properties — the only place in DAZ Studio's scripting
+  API where a face group's hidden/shown state is a queryable property (workaround for
+  Bug-Katalog #35: no such accessor exists on a plain hidden mesh/prop). Practical use:
+  instead of hiding parts of a garment via the Geometry Editor (invisible to script,
+  Bug 35), put a Geometry Shell over it and hide the shell's face groups instead — that
+  state round-trips through these two tools and persists in the saved `.duf`.

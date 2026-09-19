@@ -209,6 +209,194 @@ _SET_SKIN_WEIGHTS_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
+# Phase 6.16: Geometry Shell (Bug-Katalog #31)
+#
+# Creates a native DzGeometryShellNode via DzNewGeometryShellAction — there
+# is no known direct-constructor path that produces a shell with real
+# geometry (new DzGeometryShellNode() does not work). Like
+# DzStrandHairCreateNodeAction (see _CREATE_STRAND_HAIR_SCRIPT in
+# _registry.py), this BLOCKS on a DAZ Studio confirmation dialog and must be
+# submitted via the async endpoint; the daz_create_geometry_shell MCP tool
+# confirms the dialog itself via Windows UI Automation, no human click
+# needed. Moved here from _registry.py on 2026-09-20 (was originally added
+# to the upstream-shared file by mistake in commit e8767d2).
+_CREATE_GEOMETRY_SHELL_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var targetLabel = args.targetNodeLabel;
+
+    var target = Scene.findNodeByLabel(targetLabel);
+    if (!target) target = Scene.findNode(targetLabel);
+    if (!target) throw new Error("Target node not found: " + targetLabel);
+
+    function shellLabels() {
+        var labels = [];
+        for (var i = 0; i < Scene.getNumNodes(); i++) {
+            var n = Scene.getNode(i);
+            if (n.inherits("DzGeometryShellNode")) labels.push(n.getLabel());
+        }
+        return labels;
+    }
+
+    var before = shellLabels();
+
+    var mgr = MainWindow.getActionMgr();
+    var act = mgr.findAction("DzNewGeometryShellAction");
+    if (!act) throw new Error("Action 'DzNewGeometryShellAction' not found in DzActionMgr");
+
+    Scene.selectAllNodes(false);
+    target.select(true);
+
+    // Like DzStrandHairCreateNodeAction (see vangard-create-strand-hair),
+    // this blocks until a human confirms/cancels DAZ Studio's own dialog —
+    // meant to be run via the async endpoint, never synchronously.
+    act.trigger();
+
+    var after = shellLabels();
+    var newLabels = [];
+    for (var i = 0; i < after.length; i++) {
+        if (before.indexOf(after[i]) === -1) newLabels.push(after[i]);
+    }
+
+    if (newLabels.length === 0) {
+        throw new Error(
+            "No new Geometry Shell node appeared after the action ran. " +
+            "The user likely cancelled the confirmation dialog, or DAZ Studio " +
+            "is still waiting for it to be confirmed."
+        );
+    }
+
+    var newNode = Scene.findNodeByLabel(newLabels[0]);
+    var obj = newNode.getObject();
+
+    return {
+        success: true,
+        node: newNode.getLabel(),
+        target: target.getLabel(),
+        has_geometry: !!obj
+    };
+})()
+"""
+
+_LIST_GEOMETRY_SHELLS_SCRIPT = """\
+(function(){
+    var result = [];
+    for (var i = 0; i < Scene.getNumNodes(); i++) {
+        var n = Scene.getNode(i);
+        if (!n.inherits("DzGeometryShellNode")) continue;
+
+        var target = n.getTarget();
+        var obj = n.getObject();
+        var hasGeometry = !!obj;
+        var materials = [];
+        if (obj) {
+            var shape = obj.getCurrentShape();
+            if (shape) {
+                for (var m = 0; m < shape.getNumMaterials(); m++) {
+                    var mat = shape.getMaterial(m);
+                    var lbl = (typeof mat.getLabel === "function") ? mat.getLabel() : mat.getName();
+                    materials.push(lbl || mat.getName());
+                }
+            }
+        }
+
+        result.push({
+            label: n.getLabel(),
+            name: n.getName(),
+            target: target ? target.getLabel() : null,
+            has_geometry: hasGeometry,
+            materials: materials
+        });
+    }
+    return { count: result.length, nodes: result };
+})()
+"""
+
+# Phase 6.17: Shell face-group visibility (Bug-Katalog #35 workaround)
+#
+# DzGeometryShellNode is the only node type whose DazScript API exposes a
+# real, queryable per-face-group hide/show state: one DzBoolProperty per
+# face group, named facet_group_<name>_vis and grouped under
+# "/Shell/Visibility/Face Groups" in the Parameters pane. Confirmed live
+# (2026-09-20) both in a saved .duf (node_library studio_node_channels
+# extra) and via daz_execute against a freshly created shell. A plain
+# mesh/prop hidden via the Geometry Editor has no equivalent at all —
+# DzFacetMesh/DzFacet/DzFacetShape expose no hidden-state accessor
+# (see docs/daz-mcp-bridge-bugs.md #35). These two scripts do not fix that;
+# they let a *shell* placed over an item be hidden/shown per face group
+# instead, as a scriptable substitute.
+_GET_SHELL_VISIBILITY_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var label = args.shellLabel;
+    var n = Scene.findNodeByLabel(label);
+    if (!n) n = Scene.findNode(label);
+    if (!n) throw new Error("Node not found: " + label);
+    if (!n.inherits("DzGeometryShellNode")) {
+        throw new Error("Node '" + label + "' is not a DzGeometryShellNode (found " +
+            n.className() + "). This does NOT read Geometry-Editor \\"hide face group\\" " +
+            "state on a regular mesh/prop -- no DazScript API exposes that at all " +
+            "(Bug-Katalog #35). It only works on a Geometry Shell node's OWN face-group " +
+            "visibility toggles. If you want a scriptable hide/show for this node, " +
+            "create a shell over it first with daz_create_geometry_shell(\\"" + label +
+            "\\"), then call this again with the shell's label.");
+    }
+    var groups = [];
+    for (var i = 0; i < n.getNumProperties(); i++) {
+        var p = n.getProperty(i);
+        var name = p.getName();
+        if (name.indexOf("facet_group_") === 0 && name.lastIndexOf("_vis") === name.length - 4) {
+            groups.push({ name: name, label: p.getLabel(), visible: !!p.getValue() });
+        }
+    }
+    return { node: n.getLabel(), count: groups.length, groups: groups };
+})()
+"""
+
+_SET_SHELL_VISIBILITY_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+    var label = args.shellLabel;
+    var settings = args.groupVisibility || {};
+    var n = Scene.findNodeByLabel(label);
+    if (!n) n = Scene.findNode(label);
+    if (!n) throw new Error("Node not found: " + label);
+    if (!n.inherits("DzGeometryShellNode")) {
+        throw new Error("Node '" + label + "' is not a DzGeometryShellNode (found " +
+            n.className() + "). This does NOT set Geometry-Editor \\"hide face group\\" " +
+            "state on a regular mesh/prop -- no DazScript API exposes that at all " +
+            "(Bug-Katalog #35). It only works on a Geometry Shell node's OWN face-group " +
+            "visibility toggles. If you want a scriptable hide/show for this node, " +
+            "create a shell over it first with daz_create_geometry_shell(\\"" + label +
+            "\\"), then call this again with the shell's label.");
+    }
+    var byId = {};
+    var byLabel = {};
+    var i, p, name;
+    for (i = 0; i < n.getNumProperties(); i++) {
+        p = n.getProperty(i);
+        name = p.getName();
+        if (name.indexOf("facet_group_") === 0 && name.lastIndexOf("_vis") === name.length - 4) {
+            byId[name] = p;
+            byLabel[p.getLabel()] = p;
+        }
+    }
+    var applied = [];
+    var errors = [];
+    for (var key in settings) {
+        if (!settings.hasOwnProperty(key)) continue;
+        var prop = byId[key] || byLabel[key];
+        if (!prop) {
+            errors.push(key + ": no matching face group visibility property");
+            continue;
+        }
+        prop.setValue(settings[key] ? 1 : 0);
+        applied.push({ group: prop.getLabel(), name: prop.getName(), visible: !!settings[key] });
+    }
+    return { node: n.getLabel(), applied: applied, errors: errors };
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Merged into _REGISTRY by _register_scripts() in _registry.py.
 _REGISTRY_FORK: dict[str, tuple[str, str]] = {
@@ -227,5 +415,28 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Write per-vertex general skin weights for one or more bones on a "
         "figure and re-normalize the skin binding so the deformer picks them up",
         _SET_SKIN_WEIGHTS_SCRIPT,
+    ),
+    "vangard-create-geometry-shell": (
+        "Create a native Geometry Shell node on a target node via "
+        "DzNewGeometryShellAction. BLOCKS on a DAZ Studio confirmation "
+        "dialog — always submit via the async endpoint; the "
+        "daz_create_geometry_shell MCP tool confirms the dialog itself "
+        "via Windows UI Automation, no human click needed",
+        _CREATE_GEOMETRY_SHELL_SCRIPT,
+    ),
+    "vangard-list-geometry-shells": (
+        "List every DzGeometryShellNode in the scene with its target node and "
+        "whether it has generated geometry yet",
+        _LIST_GEOMETRY_SHELLS_SCRIPT,
+    ),
+    "vangard-get-shell-visibility": (
+        "List the per-face-group facet_group_*_vis bool properties on a "
+        "DzGeometryShellNode (Bug-Katalog #35 workaround)",
+        _GET_SHELL_VISIBILITY_SCRIPT,
+    ),
+    "vangard-set-shell-visibility": (
+        "Set one or more per-face-group facet_group_*_vis bool properties on a "
+        "DzGeometryShellNode (Bug-Katalog #35 workaround)",
+        _SET_SHELL_VISIBILITY_SCRIPT,
     ),
 }
