@@ -43,10 +43,18 @@ async def daz_create_strand_hair(target_node_label: str) -> dict[str, Any]:
     ``request_id`` instead of waiting synchronously (a synchronous wait would
     hit the client timeout while the dialog sits there).
 
+    **Crash risk (Bug-Katalog #6):** the longer this dialog stays open
+    unconfirmed, the higher the chance DAZ Studio crashes outright — this is
+    a general property of Daz's modal confirmation dialogs, not specific to
+    this action. ``daz_status()`` keeps reporting ``running: true`` even
+    after such a crash, so don't rely on polling alone. Tell the user to
+    click the dialog immediately after calling this tool, rather than
+    letting the request sit and poll in the background for a while.
+
     Workflow:
     1. Call this tool. It returns ``{"request_id": ..., "status": "queued"}``.
-    2. Tell the user: "DAZ Studio is showing a confirmation dialog — please
-       click it in the DAZ Studio window."
+    2. Immediately tell the user: "DAZ Studio is showing a confirmation
+       dialog — please click it now in the DAZ Studio window."
     3. Poll ``daz_get_request_status(request_id)`` until it's no longer
        "running"/"queued", or use ``daz_get_request_result(request_id,
        wait=true)`` to long-poll for the final result.

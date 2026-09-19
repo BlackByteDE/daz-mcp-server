@@ -165,6 +165,41 @@ _WEARABLES_ACCEPT_BTN = f"{_WEARABLES_DLG}.BasicDlgButtonGrpBox.BasicDlgAcceptDi
 _WEARABLES_CANCEL_BTN = f"{_WEARABLES_DLG}.BasicDlgButtonGrpBox.BasicDlgCancelDialogBtn"
 
 
+# Auto_id prefix for every control on the "Create New Geometry Shell"
+# dialog (DzNewGeometryShellAction), confirmed live 2026-09-19 (Bug-Katalog #31).
+_GEOMETRY_SHELL_DLG_TITLE = "Create New Geometry Shell"
+_GEOMETRY_SHELL_ACCEPT_BTN = (
+    "App.CreateNewItemDlg.BasicDlgButtonGrpBox.BasicDlgAcceptDialogBtn"
+)
+
+
+def drive_geometry_shell_create(dialog_timeout: float = 30.0) -> None:
+    """Confirm the "Create New Geometry Shell" dialog once the DazScript
+    side has already selected the target node and triggered
+    ``DzNewGeometryShellAction``.
+
+    Unlike the wearable-preset dialog pair, this dialog needs no field
+    filled in — it already comes pre-populated with a sensible default
+    name/label — so this just waits for it to appear and clicks Accept.
+    Confirmed live: unlike the native "Filtered Save" common dialog, this
+    is a DAZ Studio-native Qt6 dialog and its Accept button responds
+    normally to UIA ``Invoke()``, no WM_COMMAND workaround needed.
+
+    Must be called from a worker thread (blocking pywinauto/win32 calls) —
+    see ``daz_create_geometry_shell``'s ``asyncio.to_thread`` use.
+    """
+    _require_pywinauto()
+    pid = find_daz_studio_pid()
+
+    hwnd = _find_window(
+        pid,
+        lambda title, _cls: title == _GEOMETRY_SHELL_DLG_TITLE,
+        dialog_timeout,
+    )
+    _invoke_qt_button(hwnd, _GEOMETRY_SHELL_ACCEPT_BTN)
+    _wait_until_closed(hwnd, dialog_timeout)
+
+
 def drive_wearable_preset_save(output_path: str, dialog_timeout: float = 30.0) -> dict:
     """Drive the two native dialogs behind "File > Save As > Wearable(s)
     Preset" to completion, once the DazScript side has already selected the

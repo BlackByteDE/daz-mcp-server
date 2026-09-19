@@ -124,6 +124,36 @@ async def _execute_by_id_async(
     return response.json()
 
 
+async def _wait_for_async_result(
+    request_id: str,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    """Block until an async script request (from ``_execute_by_id_async``)
+    finishes, and return its unwrapped ``result``.
+
+    Same underlying endpoint as the public ``daz_get_request_result`` tool
+    (``GET /requests/:id/result?wait=true``), factored out so a tool that
+    already knows it wants to wait synchronously (e.g. one driving UI
+    Automation on the dialog the script is blocked on) doesn't have to
+    round-trip through the public tool function.
+    """
+    client = get_http_client()
+    try:
+        response = await client.get(
+            f"/requests/{request_id}/result",
+            params={"wait": "true", "timeout": timeout_seconds},
+            timeout=timeout_seconds + 10.0,
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as exc:
+        handle_network_error(exc)
+    check_response(response)
+    data = response.json()
+    status = data.get("status", "unknown")
+    if status == "failed":
+        raise ToolError(f"Async request failed: {data.get('error', 'unknown error')}")
+    return data.get("result")
+
+
 async def _execute_render(params: dict[str, Any]) -> dict[str, Any]:
     """Submit a render via POST /render."""
     client = get_http_client()

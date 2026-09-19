@@ -54,3 +54,16 @@ Use these for 5-10x speedup when changing 3+ items:
   existing `daz_get_material` / `daz_set_material_property` tools against those zones —
   no dedicated hair-material tool exists or is needed. Guide density/scraggle styling is
   not scriptable at all (DAZ Studio Surfaces pane only).
+
+## Geometry Shell *(fork-only)*
+- `daz_create_geometry_shell(target_node_label, dialog_timeout=30.0)`: Creates a native
+  Geometry Shell node on a target via `DzNewGeometryShellAction` — the only DazScript path
+  that produces a shell with real geometry (`new DzGeometryShellNode()` doesn't work).
+  Triggers a "Create New Geometry Shell" confirmation dialog like Strand-Based Hair does,
+  but **confirms it automatically via Windows UI Automation** (`pywinauto`) instead of
+  waiting on a human click — no polling loop needed, the tool returns the final result
+  directly. Windows-only, same constraint as `daz_save_wearable_preset` (MCP server must
+  run on the same machine as DAZ Studio). See Bug-Katalog #31 and SKILL_DAZSCRIPT.md's
+  "Do NOT use UI Actions/Menus" note for the underlying dialog-blocking behavior.
+- `daz_list_geometry_shells()`: Enumerate `DzGeometryShellNode`s with target node,
+  `has_geometry`, and material zone labels (same shape as `daz_list_strand_hair_nodes`).

@@ -5,12 +5,14 @@ in-memory scene state checkpoints.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 from typing import Any
 
 from fastmcp.exceptions import ToolError
 
-from .._mcp import mcp, _execute_by_id
+from .. import _ui_automation
+from .._mcp import mcp, _execute_by_id, _execute_by_id_async, _wait_for_async_result
 from .._client import get_scene, run_dazpy
 from .._errors import handle_dazpy_error
 
@@ -460,3 +462,90 @@ async def daz_list_checkpoints() -> dict[str, Any]:
         for name, data in sorted(_CHECKPOINTS.items())
     ]
     return {"checkpoints": items, "count": len(items)}
+
+
+# ---------------------------------------------------------------------------
+# Geometry Shell (Bug-Katalog #31)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def daz_create_geometry_shell(
+    target_node_label: str,
+    dialog_timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Create a native Geometry Shell node on a target node.
+
+    Triggers DAZ Studio's own ``DzNewGeometryShellAction`` (the same action
+    behind Create > New Geometry Shell in the GUI) with the target node
+    selected — there is no known direct-constructor path that produces a
+    Geometry Shell with real geometry (``new DzGeometryShellNode()`` was
+    tried and does not work), matching the situation for
+    ``daz_create_strand_hair``.
+
+    This shows a "Create New Geometry Shell" confirmation dialog in the DAZ
+    Studio window; the underlying script blocks until it's confirmed. Rather
+    than surfacing that to a human (crash risk — Bug-Katalog #6: the longer
+    a Daz Studio modal dialog sits open, the more likely Daz Studio crashes
+    outright, and ``daz_status()`` keeps reporting ``running: true`` through
+    it), this tool submits the trigger via the async endpoint and then
+    **clicks Accept on the dialog itself** via Windows UI Automation
+    (confirmed live 2026-09-19: the dialog needs no fields filled in, just a
+    confirm click), before waiting for the underlying script to finish and
+    returning its result directly. No human interaction needed.
+
+    **Windows-only, and only works when this MCP server process runs on the
+    same machine as DAZ Studio** — there is no remote-UI-automation path
+    (``pywinauto``/``pywin32``, same as ``daz_save_wearable_preset``).
+
+    Args:
+        target_node_label: Display label of the node to shell (e.g. a figure
+            or prop). Must already be in the scene.
+        dialog_timeout: Seconds to wait for the confirmation dialog to
+            appear/close before giving up (default 30s).
+
+    Returns:
+        Dict with ``success``, ``node`` (the new shell's label, e.g.
+        ``"<Name> Shell"``, auto-parented under the target, default
+        ``Offset Distance (cm)`` of ``0.1``), ``target``, and
+        ``has_geometry``. Pass ``node`` to ``daz_apply_material_preset`` /
+        ``daz_set_material_property`` to set its look, or use
+        ``daz_list_geometry_shells`` to re-verify.
+
+    Examples:
+        daz_create_geometry_shell("Genesis 8 Female")
+    """
+    _ui_automation._require_pywinauto()  # pylint: disable=protected-access
+    submitted = await _execute_by_id_async(
+        "vangard-create-geometry-shell",
+        {"targetNodeLabel": target_node_label},
+    )
+    await asyncio.to_thread(_ui_automation.drive_geometry_shell_create, dialog_timeout)
+    return await _wait_for_async_result(submitted["request_id"], timeout_seconds=int(dialog_timeout) + 30)
+
+
+@mcp.tool()
+async def daz_list_geometry_shells() -> dict[str, Any]:
+    """List every Geometry Shell node in the scene.
+
+    For each ``DzGeometryShellNode`` found, reports its target node, whether
+    it has generated geometry yet (``has_geometry``), and its material zone
+    labels (pass those to ``daz_get_material`` / ``daz_set_material_property``
+    / ``daz_apply_material_preset`` to read/set its look).
+
+    Use this to check the result of ``daz_create_geometry_shell`` after the
+    user confirms the dialog, or to discover shell nodes that were already in
+    a loaded scene/preset.
+
+    Returns:
+        Dict with keys:
+        - count: number of Geometry Shell nodes found
+        - nodes: list of {label, name, target, has_geometry, materials}
+
+    Examples:
+        daz_list_geometry_shells()
+        # → {"count": 1, "nodes": [{"label": "Genesis 8 Female Shell",
+        #     "target": "Genesis 8 Female", "has_geometry": true,
+        #     "materials": ["Torso", "Legs", ...]}]}
+    """
+    return await _execute_by_id("vangard-list-geometry-shells")
