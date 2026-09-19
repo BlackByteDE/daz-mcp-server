@@ -1,6 +1,6 @@
 [project]
 name = "vangard-daz-mcp"
-version = "0.5.8+bb.4"
+version = "0.5.8+bb.5"
 description = "MCP server wrapping the DazScriptServer HTTP API for DAZ Studio"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -35,9 +35,9 @@ packages = ["src/vangard_daz_mcp"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-m 'not slow'"
+addopts = "-m 'not slow and not integration'"
 markers = [
-    "integration: tests that require a running DAZ Studio instance (skipped automatically if not reachable)",
+    "integration: tests that require a running DAZ Studio instance (excluded by default via addopts; run with -m integration against a scene you can afford to have modified — see Bug-Katalog #19/#33)",
     "slow: tests that trigger actual renders (time-consuming — excluded by default, run with -m slow)",
     "two_figures: tests that require at least 2 figures loaded in the scene",
 ]

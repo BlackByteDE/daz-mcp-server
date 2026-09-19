@@ -29,10 +29,13 @@ Technical documentation for server internals and the MCP bridge.
 - Tests call tool functions directly (e.g., `await daz_status()`).
 - Import tool functions from their module (e.g., `from vangard_daz_mcp.tools.utility import daz_status`).
 - `pytest tests/` alone is safe to run even with DAZ Studio live — `addopts` excludes
-  `slow` by default, and a `pytest_collection_modifyitems` hook in `tests/conftest.py`
-  auto-tags any test using a live-DAZ fixture (`live_client`, `figure_label`, etc.) with
-  `integration`, so `-m "not integration"` reliably excludes it regardless of whether the
-  test file remembered `@pytest.mark.integration` (Bug-Katalog #19 — it mostly didn't).
+  both `slow` and `integration` by default (Bug-Katalog #33: it used to exclude only
+  `slow`, so a bare `pytest tests/` silently ran the full live-DAZ suite whenever DAZ
+  Studio happened to be reachable). A `pytest_collection_modifyitems` hook in
+  `tests/conftest.py` auto-tags any test using a live-DAZ fixture (`live_client`,
+  `figure_label`, etc.) with `integration`, so `-m "not integration"` reliably excludes it
+  regardless of whether the test file remembered `@pytest.mark.integration` (Bug-Katalog
+  #19 — it mostly didn't).
   Run `-m slow` / `-m integration` explicitly and only against a scene you can afford to
   have modified.
 

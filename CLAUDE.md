@@ -37,7 +37,7 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.4
+- **Version:** 0.5.8+bb.5
 - **Bridge:** Connects to DazScriptServer (port 18811)
 - **Registry:** 157 tools registered across 15 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
@@ -68,7 +68,8 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
   subdivision mapping, attenuation maps, ERC control-property linking; harvested from
   fork ebf444a)
 - **Phase 6.13:** Strand-Based Hair — `daz_create_strand_hair`, `daz_list_strand_hair_nodes`
-  (`DzStrandHairCreateNodeAction`; blockt auf einem Bestätigungsdialog — nur async submitten)
+  (`DzStrandHairCreateNodeAction`; Bestätigungsdialog seit 0.5.8+bb.5 per Windows-UI-Automation
+  automatisch geklickt statt auf einen Menschen zu warten — Bug-Katalog #6/#31)
 - **Phase 6.14:** Wearable Preset Export *(fork-only)* — `daz_save_wearable_preset`
   (Windows-UI-Automation über `pywinauto`, da `DzWearablesAssetFilter.doSave()` mit
   generischem `errCode 98` fehlschlägt; Bug-Katalog #22 Teil 2)

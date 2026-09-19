@@ -22,13 +22,18 @@ a running DAZ Studio 6 instance:
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from .._mcp import mcp, _execute_by_id, _execute_by_id_async
+from .. import _ui_automation
+from .._mcp import mcp, _execute_by_id, _execute_by_id_async, _wait_for_async_result
 
 
 @mcp.tool()
-async def daz_create_strand_hair(target_node_label: str) -> dict[str, Any]:
+async def daz_create_strand_hair(
+    target_node_label: str,
+    dialog_timeout: float = 30.0,
+) -> dict[str, Any]:
     """Create a native Strand-Based Hair node fit to a target figure.
 
     Triggers DAZ Studio's own ``DzStrandHairCreateNodeAction`` (the same
@@ -37,31 +42,22 @@ async def daz_create_strand_hair(target_node_label: str) -> dict[str, Any]:
     hair node with real generated geometry — a bare ``new DzStrandHairNode()``
     never gets geometry, no matter what's set on it afterward.
 
-    **This shows a confirmation dialog in the DAZ Studio window that a human
-    must click.** The underlying script blocks until that happens, so this
-    tool submits it via the async endpoint and returns immediately with a
-    ``request_id`` instead of waiting synchronously (a synchronous wait would
-    hit the client timeout while the dialog sits there).
+    This shows a "Create New Strand-Based Hair" confirmation dialog in the
+    DAZ Studio window; the underlying script blocks until it's confirmed.
+    Rather than surfacing that to a human (crash risk — Bug-Katalog #6: the
+    longer a Daz Studio modal dialog sits open, the more likely Daz Studio
+    crashes outright, and ``daz_status()`` keeps reporting ``running: true``
+    through it), this tool submits the trigger via the async endpoint and
+    then **clicks Accept on the dialog itself** via Windows UI Automation
+    (confirmed live 2026-09-19: same dialog class/Accept control as
+    ``daz_create_geometry_shell``, needs no fields filled in, just a confirm
+    click), before waiting for the underlying script to finish and returning
+    its result directly. No human interaction needed.
 
-    **Crash risk (Bug-Katalog #6):** the longer this dialog stays open
-    unconfirmed, the higher the chance DAZ Studio crashes outright — this is
-    a general property of Daz's modal confirmation dialogs, not specific to
-    this action. ``daz_status()`` keeps reporting ``running: true`` even
-    after such a crash, so don't rely on polling alone. Tell the user to
-    click the dialog immediately after calling this tool, rather than
-    letting the request sit and poll in the background for a while.
-
-    Workflow:
-    1. Call this tool. It returns ``{"request_id": ..., "status": "queued"}``.
-    2. Immediately tell the user: "DAZ Studio is showing a confirmation
-       dialog — please click it now in the DAZ Studio window."
-    3. Poll ``daz_get_request_status(request_id)`` until it's no longer
-       "running"/"queued", or use ``daz_get_request_result(request_id,
-       wait=true)`` to long-poll for the final result.
-    4. On success the result includes the new node's label — pass it to
-       ``daz_get_material`` / ``daz_set_material_property`` to set hair
-       color/shader/thickness, or to ``daz_list_strand_hair_nodes`` to
-       re-verify.
+    **Windows-only, and only works when this MCP server process runs on the
+    same machine as DAZ Studio** — there is no remote-UI-automation path
+    (``pywinauto``/``pywin32``, same as ``daz_create_geometry_shell`` /
+    ``daz_save_wearable_preset``).
 
     **What this does NOT give you:** guide density, guide count, and
     scraggle/frizz styling are not scriptable at all (see module docstring)
@@ -71,17 +67,26 @@ async def daz_create_strand_hair(target_node_label: str) -> dict[str, Any]:
     Args:
         target_node_label: Display label of the figure to grow hair on
             (e.g. ``"Genesis 8 Female"``). Must already be in the scene.
+        dialog_timeout: Seconds to wait for the confirmation dialog to
+            appear/close before giving up (default 30s).
 
     Returns:
-        ``{"request_id": "script-XXXXXXXX", "status": "queued", "submitted_at": "..."}``
+        Dict with ``success``, ``node`` (the new hair node's label, e.g.
+        ``"Strand-Based Hair"``), ``target``, and ``has_geometry``. Pass
+        ``node`` to ``daz_get_material`` / ``daz_set_material_property`` to
+        set hair color/shader/thickness, or to ``daz_list_strand_hair_nodes``
+        to re-verify.
 
     Examples:
         daz_create_strand_hair("Genesis 8 Female")
     """
-    return await _execute_by_id_async(
+    _ui_automation._require_pywinauto()  # pylint: disable=protected-access
+    submitted = await _execute_by_id_async(
         "vangard-create-strand-hair",
         {"targetNodeLabel": target_node_label},
     )
+    await asyncio.to_thread(_ui_automation.drive_strand_hair_create, dialog_timeout)
+    return await _wait_for_async_result(submitted["request_id"], timeout_seconds=int(dialog_timeout) + 30)
 
 
 @mcp.tool()

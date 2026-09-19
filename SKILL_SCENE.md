@@ -42,13 +42,15 @@ Use these for 5-10x speedup when changing 3+ items:
 - `daz_delete_node`: Remove a node from the scene.
 
 ## Strand-Based Hair
-- `daz_create_strand_hair(target_node_label)`: Creates a native Strand-Based Hair node
-  fit to a figure via `DzStrandHairCreateNodeAction` — the only DazScript path that
-  produces hair with real geometry. **Blocks on a DAZ Studio confirmation dialog a human
-  must click**, so this tool only exists as an async wrapper — it submits via the async
-  endpoint and returns a `request_id` immediately; poll with `daz_get_request_status` /
-  `daz_get_request_result`. See SKILL_DAZSCRIPT.md's "Do NOT use UI Actions/Menus" note —
-  this is the one confirmed exception, and it's only safe because it's async-only.
+- `daz_create_strand_hair(target_node_label, dialog_timeout=30.0)`: Creates a native
+  Strand-Based Hair node fit to a figure via `DzStrandHairCreateNodeAction` — the only
+  DazScript path that produces hair with real geometry. Triggers a "Create New
+  Strand-Based Hair" confirmation dialog, but **confirms it automatically via Windows UI
+  Automation** (`pywinauto`, same dialog class/Accept control as `daz_create_geometry_shell`
+  — Bug-Katalog #6/#31) instead of waiting on a human click — no polling loop needed, the
+  tool returns the final result directly. Windows-only, same constraint as
+  `daz_create_geometry_shell` / `daz_save_wearable_preset` (MCP server must run on the same
+  machine as DAZ Studio).
 - `daz_list_strand_hair_nodes`: Enumerate `DzStrandHairNode`s with target figure,
   `has_geometry`, and material zone labels. Hair color/shader/thickness go through the
   existing `daz_get_material` / `daz_set_material_property` tools against those zones —

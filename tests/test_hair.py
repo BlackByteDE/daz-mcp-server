@@ -7,6 +7,8 @@ or DazScriptServer required.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
 import respx
@@ -60,17 +62,49 @@ def mock_daz():
         yield router
 
 
+def _request_result(result) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "request_id": "hair-abc123",
+            "status": "completed",
+            "success": True,
+            "result": result,
+            "output": [],
+            "error": None,
+            "duration_ms": 500,
+            "completed_at": "2026-04-08T12:00:01.000",
+        },
+    )
+
+
 class TestCreateStrandHair:
-    async def test_submits_via_async_endpoint(self, mock_daz):
-        """daz_create_strand_hair must never block synchronously on the
-        confirmation-dialog script — verify it posts to /async, not /execute."""
+    """daz_create_strand_hair submits the confirmation-dialog script via the
+    async endpoint (never blocks synchronously on it), then drives the
+    dialog itself via Windows UI Automation instead of waiting on a human
+    click (Bug-Katalog #6/#31) — ``_ui_automation.drive_strand_hair_create``
+    is mocked out here since it needs a real DAZ Studio window."""
+
+    async def test_submits_via_async_endpoint_then_confirms_dialog(self, mock_daz):
         route = mock_daz.post("/scripts/vangard-create-strand-hair/async").mock(
             return_value=_async_submitted("hair-abc123")
         )
-        result = await daz_create_strand_hair("Genesis 8 Female")
+        mock_daz.get("/requests/hair-abc123/result").mock(
+            return_value=_request_result(
+                {"success": True, "node": "Strand-Based Hair",
+                 "target": "Genesis 8 Female", "has_geometry": True}
+            )
+        )
+        with patch(
+            "vangard_daz_mcp.tools.hair._ui_automation._require_pywinauto"
+        ), patch(
+            "vangard_daz_mcp.tools.hair._ui_automation.drive_strand_hair_create"
+        ) as drive:
+            result = await daz_create_strand_hair("Genesis 8 Female")
         assert route.called
-        assert result["request_id"] == "hair-abc123"
-        assert result["status"] == "queued"
+        drive.assert_called_once()
+        assert result["success"] is True
+        assert result["node"] == "Strand-Based Hair"
 
     async def test_passes_target_node_label(self, mock_daz):
         captured = {}
@@ -83,7 +117,13 @@ class TestCreateStrandHair:
         mock_daz.post("/scripts/vangard-create-strand-hair/async").mock(
             side_effect=capture
         )
-        await daz_create_strand_hair("Genesis 9 Male")
+        mock_daz.get("/requests/hair-xyz/result").mock(
+            return_value=_request_result({"success": True, "node": "Strand-Based Hair"})
+        )
+        with patch(
+            "vangard_daz_mcp.tools.hair._ui_automation._require_pywinauto"
+        ), patch("vangard_daz_mcp.tools.hair._ui_automation.drive_strand_hair_create"):
+            await daz_create_strand_hair("Genesis 9 Male")
         assert captured["args"]["targetNodeLabel"] == "Genesis 9 Male"
 
     async def test_never_calls_sync_execute_endpoint(self, mock_daz):
@@ -95,8 +135,27 @@ class TestCreateStrandHair:
         mock_daz.post("/scripts/vangard-create-strand-hair/async").mock(
             return_value=_async_submitted("hair-guard")
         )
-        await daz_create_strand_hair("Genesis 8 Female")
+        mock_daz.get("/requests/hair-guard/result").mock(
+            return_value=_request_result({"success": True, "node": "Strand-Based Hair"})
+        )
+        with patch(
+            "vangard_daz_mcp.tools.hair._ui_automation._require_pywinauto"
+        ), patch("vangard_daz_mcp.tools.hair._ui_automation.drive_strand_hair_create"):
+            await daz_create_strand_hair("Genesis 8 Female")
         assert not sync_route.called
+
+    async def test_raises_when_pywinauto_unavailable(self, mock_daz):
+        """No UI-automation, no dialog confirmation — this tool must refuse
+        up front rather than submitting a request that will crash DAZ
+        Studio while it waits for a click that will never come."""
+        from fastmcp.exceptions import ToolError
+
+        with patch(
+            "vangard_daz_mcp.tools.hair._ui_automation._require_pywinauto",
+            side_effect=ToolError("pywinauto not available"),
+        ):
+            with pytest.raises(ToolError):
+                await daz_create_strand_hair("Genesis 8 Female")
 
 
 class TestListStrandHairNodes:

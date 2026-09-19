@@ -165,39 +165,58 @@ _WEARABLES_ACCEPT_BTN = f"{_WEARABLES_DLG}.BasicDlgButtonGrpBox.BasicDlgAcceptDi
 _WEARABLES_CANCEL_BTN = f"{_WEARABLES_DLG}.BasicDlgButtonGrpBox.BasicDlgCancelDialogBtn"
 
 
-# Auto_id prefix for every control on the "Create New Geometry Shell"
-# dialog (DzNewGeometryShellAction), confirmed live 2026-09-19 (Bug-Katalog #31).
-_GEOMETRY_SHELL_DLG_TITLE = "Create New Geometry Shell"
-_GEOMETRY_SHELL_ACCEPT_BTN = (
+# Both "Create New <Thing>" confirmation dialogs (Geometry Shell, Strand-Based
+# Hair) are the same underlying Qt6 dialog class (``App.CreateNewItemDlg``),
+# confirmed live 2026-09-19 by inspecting both control trees side by side —
+# only the window title differs, the Accept button's auto_id path is
+# identical on both.
+_CREATE_NEW_ITEM_ACCEPT_BTN = (
     "App.CreateNewItemDlg.BasicDlgButtonGrpBox.BasicDlgAcceptDialogBtn"
 )
+_GEOMETRY_SHELL_DLG_TITLE = "Create New Geometry Shell"
+_STRAND_HAIR_DLG_TITLE = "Create New Strand-Based Hair"
 
 
-def drive_geometry_shell_create(dialog_timeout: float = 30.0) -> None:
-    """Confirm the "Create New Geometry Shell" dialog once the DazScript
-    side has already selected the target node and triggered
-    ``DzNewGeometryShellAction``.
+def _drive_create_new_item_dialog(dialog_title: str, dialog_timeout: float) -> None:
+    """Confirm a "Create New <Thing>" dialog (``App.CreateNewItemDlg``) once
+    the DazScript side has already selected the target node and triggered
+    the corresponding ``Dz*Action``.
 
-    Unlike the wearable-preset dialog pair, this dialog needs no field
-    filled in — it already comes pre-populated with a sensible default
-    name/label — so this just waits for it to appear and clicks Accept.
-    Confirmed live: unlike the native "Filtered Save" common dialog, this
-    is a DAZ Studio-native Qt6 dialog and its Accept button responds
-    normally to UIA ``Invoke()``, no WM_COMMAND workaround needed.
+    These dialogs need no field filled in — they come pre-populated with a
+    sensible default name/label — so this just waits for the dialog to
+    appear and clicks Accept. Confirmed live: unlike the native "Filtered
+    Save" common dialog, this is a DAZ Studio-native Qt6 dialog and its
+    Accept button responds normally to UIA ``Invoke()``, no WM_COMMAND
+    workaround needed.
 
     Must be called from a worker thread (blocking pywinauto/win32 calls) —
-    see ``daz_create_geometry_shell``'s ``asyncio.to_thread`` use.
+    see ``daz_create_geometry_shell``/``daz_create_strand_hair``'s
+    ``asyncio.to_thread`` use.
     """
     _require_pywinauto()
     pid = find_daz_studio_pid()
 
     hwnd = _find_window(
         pid,
-        lambda title, _cls: title == _GEOMETRY_SHELL_DLG_TITLE,
+        lambda title, _cls: title == dialog_title,
         dialog_timeout,
     )
-    _invoke_qt_button(hwnd, _GEOMETRY_SHELL_ACCEPT_BTN)
+    _invoke_qt_button(hwnd, _CREATE_NEW_ITEM_ACCEPT_BTN)
     _wait_until_closed(hwnd, dialog_timeout)
+
+
+def drive_geometry_shell_create(dialog_timeout: float = 30.0) -> None:
+    """Confirm the "Create New Geometry Shell" dialog (``DzNewGeometryShellAction``)."""
+    _drive_create_new_item_dialog(_GEOMETRY_SHELL_DLG_TITLE, dialog_timeout)
+
+
+def drive_strand_hair_create(dialog_timeout: float = 30.0) -> None:
+    """Confirm the "Create New Strand-Based Hair" dialog
+    (``DzStrandHairCreateNodeAction``). Confirmed live 2026-09-19: same
+    dialog class/Accept auto_id as ``drive_geometry_shell_create``, only the
+    title differs — see Bug-Katalog #6.
+    """
+    _drive_create_new_item_dialog(_STRAND_HAIR_DLG_TITLE, dialog_timeout)
 
 
 def drive_wearable_preset_save(output_path: str, dialog_timeout: float = 30.0) -> dict:

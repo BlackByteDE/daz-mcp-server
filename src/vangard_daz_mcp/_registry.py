@@ -9077,7 +9077,9 @@ _REGISTRY: dict[str, tuple[str, str]] = {
     "vangard-create-strand-hair": (
         "Create a native Strand-Based Hair node fit to a target figure via "
         "DzStrandHairCreateNodeAction. BLOCKS on a DAZ Studio confirmation "
-        "dialog the user must click — always submit via the async endpoint",
+        "dialog — always submit via the async endpoint; the "
+        "daz_create_strand_hair MCP tool confirms the dialog itself via "
+        "Windows UI Automation, no human click needed",
         _CREATE_STRAND_HAIR_SCRIPT,
     ),
     "vangard-list-strand-hair-nodes": (
