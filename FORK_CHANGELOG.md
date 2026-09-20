@@ -6,6 +6,22 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.8 — 2026-09-20
+
+### Fixed
+
+- **`daz_apply_material_preset`'s missing-files preflight reported real,
+  present files as missing** whenever their path contained a percent-encoded
+  character (Bug-Katalog #23). DSON stores content-relative texture/`.dsf`
+  paths URL-encoded (e.g. `%20` for a space, `%203D` for `" 3D"`), but
+  `extract_preset_map_paths` (`tools/material.py`) passed those strings
+  straight through to the on-disk existence check without decoding them
+  first — a file that actually exists at `.../DAZ 3D/Built-in Content/...`
+  was compared against the literal string `.../DAZ%203D/Built-in%20Content/...`
+  and never matched. Now decodes each extracted path with
+  `urllib.parse.unquote()` before the check. The previous `allow_missing=true`
+  workaround is no longer necessary for this specific false-positive case.
+
 ## 0.5.8+bb.7 — 2026-09-20
 
 ### Fixed

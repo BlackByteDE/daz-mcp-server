@@ -41,3 +41,17 @@ def test_extract_preset_map_paths_gzip_and_plain(tmp_path: Path):
         "skin.jpg",
         "/Runtime/Textures/skin.jpg",
     ]
+
+
+def test_extract_preset_map_paths_decodes_url_encoding(tmp_path: Path):
+    """Bug-Katalog #23: DSON stores content-relative paths URL-encoded
+    (e.g. "%20" for a space) — real files on disk have literal spaces, so
+    the missing-files preflight must compare against the decoded form."""
+    payload = {
+        "filename": "/data/DAZ%203D/Built-in%20Content/FilaToon/FilaToon_LUT_03.png",
+    }
+    duf = tmp_path / "encoded.duf"
+    duf.write_text(json.dumps(payload), encoding="utf-8")
+    assert extract_preset_map_paths(str(duf)) == [
+        "/data/DAZ 3D/Built-in Content/FilaToon/FilaToon_LUT_03.png",
+    ]

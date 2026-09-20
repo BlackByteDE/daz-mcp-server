@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fastmcp.exceptions import ToolError
 
@@ -29,9 +30,15 @@ def extract_preset_map_paths(preset_path: str) -> list[str]:
     def walk(obj: Any) -> None:
         if isinstance(obj, str):
             base = obj.split("#", 1)[0].replace("\\", "/")
-            if _MAP_EXT.search(base) and base not in seen:
-                seen.add(base)
-                found.append(base)
+            if _MAP_EXT.search(base):
+                # DSON/.duf stores content-relative paths URL-encoded (e.g.
+                # "%20" for a space, "%203D" for " 3D") — decode before the
+                # existence check downstream, or a real file on disk with a
+                # literal space is reported as missing (Bug-Katalog #23).
+                decoded = unquote(base)
+                if decoded not in seen:
+                    seen.add(decoded)
+                    found.append(decoded)
         elif isinstance(obj, dict):
             for value in obj.values():
                 walk(value)
