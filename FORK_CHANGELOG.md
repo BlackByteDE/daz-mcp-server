@@ -6,6 +6,25 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.7 — 2026-09-20
+
+### Fixed
+
+- **`daz_get_material` silently hid texture maps bound to a channel**
+  (Bug-Katalog #34). It only ever read a property's scalar value
+  (`getValue()`/`getColorValue()`) and never checked `getMapValue()` — a
+  channel with a real diffuse/roughness/normal texture reported only its
+  underlying flat color/number, with no indication a map existed at all.
+  `_GET_MATERIAL_SCRIPT` in `_registry.py` now probes `getMapValue()` for
+  every property and adds a `map` field (file path or `null`) alongside the
+  existing `value` — a channel can carry both at once, with the map
+  overriding the flat value visually.
+- **`daz_copy_material` dropped texture maps when copying between
+  materials**, same root cause. `_COPY_MATERIAL_SCRIPT` now also transfers
+  `srcProp.getMapValue()` onto the destination property via `setMap()` and
+  reports the count in a new `maps_copied` result field — the previous
+  manual `daz_execute`/`setMap()` follow-up step is no longer necessary.
+
 ## 0.5.8+bb.6 — 2026-09-20
 
 ### Added

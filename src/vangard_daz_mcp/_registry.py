@@ -6226,7 +6226,7 @@ _GET_MATERIAL_SCRIPT = """\
     var props = [];
     for (var p = 0; p < mat.getNumProperties(); p++) {
         var prop = mat.getProperty(p);
-        var entry = { name: prop.getName(), label: prop.getLabel(), type: "unknown", value: null };
+        var entry = { name: prop.getName(), label: prop.getLabel(), type: "unknown", value: null, map: null };
         if (prop.inherits("DzColorProperty") || prop.inherits("DzFloatColorProperty")) {
             entry.type = "color";
             entry.value = readColorProp(prop);
@@ -6240,6 +6240,14 @@ _GET_MATERIAL_SCRIPT = """\
                 entry.value = img ? img.getFilename() : null;
             } catch(e) { entry.value = null; }
         }
+        // Bug #34: a scalar value can coexist with a texture map overriding it —
+        // getValue()/getColorValue() alone silently hide that a map is set.
+        try {
+            if (typeof prop.getMapValue === "function") {
+                var mapVal = prop.getMapValue();
+                if (mapVal) entry.map = mapVal.getFilename();
+            }
+        } catch (eMap) {}
         props.push(entry);
     }
     return {
@@ -7657,6 +7665,7 @@ _COPY_MATERIAL_SCRIPT = """\
     // Copy properties from source to destination
     var copied = 0;
     var skipped = 0;
+    var maps_copied = 0;
     for (var p = 0; p < srcMat.getNumProperties(); p++) {
         var srcProp = srcMat.getProperty(p);
         if (!srcProp) continue;
@@ -7672,6 +7681,17 @@ _COPY_MATERIAL_SCRIPT = """\
         } catch(e) {
             skipped++;
         }
+        // Bug #34: getValue()/setValue() alone drop a texture map sitting on top
+        // of the scalar value — copy it explicitly via getMapValue()/setMap().
+        try {
+            if (typeof srcProp.getMapValue === 'function' && typeof dstProp.setMap === 'function') {
+                var srcMap = srcProp.getMapValue();
+                if (srcMap) {
+                    dstProp.setMap(srcMap.getFilename());
+                    maps_copied++;
+                }
+            }
+        } catch (eMap) {}
     }
 
     return {
@@ -7679,7 +7699,8 @@ _COPY_MATERIAL_SCRIPT = """\
         source: srcNodeLabel + "/" + srcMat.getLabel(),
         destination: dstNodeLabel + "/" + dstMat.getLabel(),
         properties_copied: copied,
-        properties_skipped: skipped
+        properties_skipped: skipped,
+        maps_copied: maps_copied
     };
 })()
 """

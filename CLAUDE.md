@@ -37,7 +37,7 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.6
+- **Version:** 0.5.8+bb.7
 - **Bridge:** Connects to DazScriptServer (port 18811)
 - **Registry:** 159 tools registered across 15 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
@@ -83,6 +83,10 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
   `daz_set_shell_visibility` (`facet_group_<name>_vis` bool properties on
   `DzGeometryShellNode`s — the only scriptable per-face-group hide/show state in DAZ
   Studio's API, workaround for Bug-Katalog #35)
+- **Phase 6.18:** Material Map Visibility — `daz_get_material` now reports a `map` field
+  per property (texture bound to that channel, independent of its scalar `value`);
+  `daz_copy_material` now copies maps too (`maps_copied` in its result) — closes
+  Bug-Katalog #34
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

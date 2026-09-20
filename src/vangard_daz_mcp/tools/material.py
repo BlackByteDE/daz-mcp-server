@@ -123,6 +123,12 @@ async def daz_get_material(node_label: str, material_name: str) -> dict[str, Any
     Color values are returned as ``"#RRGGBB"`` hex strings.
     Image values are returned as file paths (or null if no map is loaded).
 
+    Each property also carries a ``map`` field: the file path of a texture
+    map bound to that channel, or null if it's a pure scalar/flat-color value.
+    A channel can have BOTH a ``value`` (the underlying flat color/number) and
+    a non-null ``map`` at the same time — the map overrides the value visually.
+    Check ``map`` before assuming a channel is untextured (Bug-Katalog #34).
+
     Args:
         node_label: Display label or internal name of the target node.
         material_name: Label or name of the material zone (from daz_list_materials).
@@ -131,7 +137,7 @@ async def daz_get_material(node_label: str, material_name: str) -> dict[str, Any
         Dict with keys:
         - node, material, shader: confirmed identifiers
         - property_count: total number of properties
-        - properties: list of {name, label, type, value}
+        - properties: list of {name, label, type, value, map}
 
     Examples:
         daz_get_material("Genesis 9", "Skin")
@@ -307,6 +313,11 @@ async def daz_copy_material(
     Iterates every property on the source material and sets the matching property
     on the destination material.  Properties that exist on the source but not the
     destination are silently skipped.  Both nodes must already be loaded in the scene.
+
+    Also copies texture maps bound to a channel (via ``getMapValue()``/``setMap()``),
+    not just the underlying scalar/flat-color value — previously a map-textured
+    channel copied only its flat value and silently dropped the texture
+    (Bug-Katalog #34). The result's ``maps_copied`` count reports how many.
 
     Useful for duplicating a skin material from one character to another, or
     copying a surface finish between props of the same type.
