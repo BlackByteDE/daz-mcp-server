@@ -37,9 +37,9 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.8
+- **Version:** 0.5.8+bb.9
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 159 tools registered across 15 tool modules.
+- **Registry:** 160 tools registered across 15 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
@@ -92,6 +92,11 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
   before the existence check; DSON stores content-relative paths percent-encoded
   (`%20`, `%203D`), so a real file with a literal space was wrongly reported as
   missing — closes Bug-Katalog #23
+- **Phase 6.20:** Modifier Asset Export *(fork-only)* — `daz_save_modifier_asset`
+  (saves exactly the named morphs as `Morphs/<vendor>/<product>/<morph>.dsf`; drives the
+  *Modifier Asset(s)* dialog via UI Automation with keyboard input because
+  `DzModifierSupportAssetFilter.doSave()` writes nothing — needs an unlocked desktop;
+  Bug-Katalog #37)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

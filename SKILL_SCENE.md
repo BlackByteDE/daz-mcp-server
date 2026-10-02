@@ -26,6 +26,14 @@ Use these for 5-10x speedup when changing 3+ items:
   File > Save As > Support Asset > Prop Asset. `output_path` must resolve inside a
   configured content directory (see SKILL_DAZSCRIPT.md's "Content-Library asset export"
   section for the BaseDataPath/errCode 98 gotcha).
+- `daz_save_modifier_asset(node_label, morph_names, vendor_name, product_name,
+  base_data_path=None)` *(fork-only)*: Save exactly the named morphs of a node as
+  Modifier Assets (`data/<asset vendor>/<asset product>/<item>/Morphs/<vendor>/<product>/<morph>.dsf`)
+  so they load with the item in every scene — equivalent of File > Save As > Support
+  Asset > Modifier Asset(s). The node must itself be a saved Figure/Prop Asset
+  (from the library, or via `daz_save_prop_asset`). Drives the dialog via Windows UI
+  Automation **with keyboard input**: DAZ Studio comes to the foreground briefly, and
+  the desktop must be unlocked (refused up front otherwise).
 
 ## Materials
 - `daz_list_materials`, `daz_get_material`: Inspect surfaces on a node.

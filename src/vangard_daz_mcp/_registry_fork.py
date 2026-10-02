@@ -37,6 +37,61 @@ _TRIGGER_WEARABLE_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
+# Phase 6.20: Modifier Asset save (Bug-Katalog #37)
+#
+# DzModifierSupportAssetFilter.doSave() returns 0 but writes nothing under
+# every NodeNames layout tried live (node -> morph, node -> group -> morph,
+# flat, path-style keys, ...): which morphs get saved is chosen only by the
+# checkbox tree in the GUI dialog, which getDefaultOptions()/getOptions()
+# never populate. So, like the Wearable Preset path, the Python side drives
+# the real dialog via UI Automation. The preflight runs synchronously first
+# so a typo'd morph name fails fast instead of after a dialog was opened.
+_MODIFIER_ASSET_PREFLIGHT_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var node = resolveNode(args.nodeLabel);
+    var obj = node.getObject();
+    if (!obj) throw new Error("Node '" + node.getLabel() + "' has no geometry object (no modifiers to save)");
+    var available = [];
+    var byName = {};
+    var byLabel = {};
+    for (var i = 0; i < obj.getNumModifiers(); i++) {
+        var m = obj.getModifier(i);
+        var entry = { name: m.getName(), label: m.getLabel(), type: m.className() };
+        available.push(entry);
+        byName[entry.name] = entry;
+        byLabel[entry.label] = entry;
+    }
+    var morphs = [];
+    var missing = [];
+    var wanted = args.morphNames || [];
+    for (var j = 0; j < wanted.length; j++) {
+        var hit = byName[wanted[j]] || byLabel[wanted[j]];
+        if (hit) morphs.push(hit); else missing.push(wanted[j]);
+    }
+    var cm = App.getContentMgr();
+    var dirs = [];
+    for (var k = 0; k < cm.getNumContentDirectories(); k++) dirs.push(cm.getContentDirectoryPath(k));
+    return { node: node.getLabel(), nodeName: node.getName(), morphs: morphs,
+             missing: missing, available: available, contentDirectories: dirs };
+})()
+"""
+
+# Selects the node and fires DzModifierAssetFilterAction. BLOCKS on the
+# modal "Modifier Asset(s) Save Options" dialog (or on a "Resource Error"
+# box if the node itself was never saved as a Figure/Prop Asset) — submit via
+# the async endpoint only; daz_save_modifier_asset drives the dialog.
+_TRIGGER_MODIFIER_ASSET_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var node = resolveNode(args.nodeLabel);
+    Scene.selectAllNodes(false);
+    node.select(true);
+    var act = MainWindow.getActionMgr().findAction("DzModifierAssetFilterAction");
+    if (!act) throw new Error("DzModifierAssetFilterAction not found in DzActionMgr");
+    act.trigger();
+    return { success: true, node: node.getLabel() };
+})()
+"""
+
 # Phase 6.15: Extra bones / skin weights (Bug-Katalog #30)
 #
 # DzSkinBinding does not pick up a newly added DzBoneBinding's weights until
@@ -405,6 +460,17 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Wearable(s) Preset) — blocks on native dialogs, submit via async endpoint only; "
         "daz_save_wearable_preset drives the resulting dialogs via UI Automation",
         _TRIGGER_WEARABLE_SAVE_SCRIPT,
+    ),
+    "vangard-modifier-asset-preflight": (
+        "Resolve a node and check that the named morphs/modifiers exist on it "
+        "before daz_save_modifier_asset opens the Modifier Asset(s) save dialog",
+        _MODIFIER_ASSET_PREFLIGHT_SCRIPT,
+    ),
+    "vangard-trigger-modifier-asset-save": (
+        "Select a node and fire DzModifierAssetFilterAction (File > Save As > "
+        "Support Asset > Modifier Asset(s)) — blocks on a modal dialog, submit via "
+        "async endpoint only; daz_save_modifier_asset drives it via UI Automation",
+        _TRIGGER_MODIFIER_ASSET_SAVE_SCRIPT,
     ),
     "vangard-create-child-bone": (
         "Create a child DzBone under an existing bone of a figure and register "

@@ -6,6 +6,27 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.9 — 2026-10-02
+
+### Added
+
+- **`daz_save_modifier_asset(node_label, morph_names, vendor_name,
+  product_name, base_data_path=None)`** (`tools/content.py`) — saves exactly
+  the named morphs of a node as Content-Library Modifier Assets
+  (`data/<asset vendor>/<asset product>/<item>/Morphs/<vendor>/<product>/<morph>.dsf`),
+  closes Bug-Katalog #37. `DzModifierSupportAssetFilter.doSave()` returns 0
+  but writes nothing under every `NodeNames` layout tried live (the morph
+  selection exists only as the dialog's checkbox tree), so the tool drives
+  the real *File > Save As > Support Asset > Modifier Asset(s)* dialog via
+  UI Automation (`_ui_automation.drive_modifier_asset_save`). Unlike the
+  other UI-automated tools this dialog needs keyboard input (`*` to expand
+  the tree, Down/Space to tick rows — UIA `Expand()`/`Toggle()` are no-ops
+  on it), so DAZ Studio is briefly brought to the foreground and an
+  unlocked desktop is required (checked up front). A preflight script
+  validates the morph names before any dialog opens; a "Resource Error"
+  box (node not backed by a saved Figure/Prop Asset) is dismissed and
+  reported; the written `.dsf` files are verified on disk.
+
 ## 0.5.8+bb.8 — 2026-09-20
 
 ### Fixed

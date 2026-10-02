@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastmcp.exceptions import ToolError
 
-from .._mcp import mcp, _execute_by_id, _execute_by_id_async
+from .._mcp import mcp, _execute_by_id, _execute_by_id_async, _wait_for_async_result
 from .._client import get_content_browser_client, CONTENT_BROWSER_URL
 from .. import _ui_automation
 
@@ -441,3 +442,136 @@ async def daz_save_wearable_preset(
     return await asyncio.to_thread(
         _ui_automation.drive_wearable_preset_save, output_path, dialog_timeout
     )
+
+
+def _find_saved_modifier_files(
+    base_data_path: str, vendor_name: str, product_name: str, morphs: list[dict], since: float,
+) -> dict[str, str]:
+    """Locate the ``.dsf`` written for each morph, newer than ``since``.
+
+    DAZ Studio writes ``<base>/data/<asset vendor>/<asset product>/<item>/
+    Morphs/<vendor>/<product>/<morph>.dsf`` — the first three folders come
+    from the *node's* own asset (e.g. ``Elena_Shvets/Leather_Dress/Dress``),
+    not from the dialog, so they are globbed rather than predicted.
+    """
+    data_dir = Path(base_data_path) / "data"
+    found: dict[str, str] = {}
+    for m in morphs:
+        for stem in dict.fromkeys((m["name"], m["label"])):
+            pattern = f"*/*/*/Morphs/{vendor_name}/{product_name}/{stem}.dsf"
+            hits = [p for p in data_dir.glob(pattern) if p.stat().st_mtime >= since]
+            if hits:
+                found[m["name"]] = str(max(hits, key=lambda p: p.stat().st_mtime))
+                break
+    return found
+
+
+@mcp.tool()
+async def daz_save_modifier_asset(
+    node_label: str,
+    morph_names: list[str],
+    vendor_name: str,
+    product_name: str,
+    base_data_path: str | None = None,
+    dialog_timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Save selected morphs of a node as Content-Library Modifier Assets (.dsf).
+
+    Equivalent of **File > Save As > Support Asset > Modifier Asset(s)...**
+    with exactly ``morph_names`` ticked. Afterwards the morphs load
+    automatically with the item in every scene, and a scene ``.duf`` stores
+    only their values instead of the deltas. Typical use: persisting a morph
+    created with ``daz_load_morph_pro`` on a clothing item.
+
+    ``DzModifierSupportAssetFilter.doSave()`` returns success but writes
+    nothing (the morph selection lives only in the dialog's checkbox tree,
+    Bug-Katalog #37), so this tool drives the real dialog via Windows UI
+    Automation. **Windows-only, MCP server must run on the same machine as
+    DAZ Studio.** Unlike ``daz_save_wearable_preset`` this dialog needs
+    keyboard input, so DAZ Studio is briefly brought to the foreground —
+    don't type into other windows while it runs — and it needs an unlocked
+    interactive desktop (it refuses up front while the workstation is
+    locked, before any dialog is opened).
+
+    Args:
+        node_label: Display label, internal name, elementID, or
+            ``Parent/Label`` of the node carrying the morphs. The node itself
+            must be backed by a saved Figure/Prop Asset (loaded from the
+            content library, or saved via ``daz_save_prop_asset``) — DAZ
+            Studio refuses otherwise; the tool reports that as an error.
+        morph_names: Internal names or labels of the morphs to save (as
+            listed by ``daz_list_morphs``). Only these are ticked.
+        vendor_name: Vendor/author folder (``Morphs/<vendor>/...``), e.g.
+            ``"blackbyte.de"``.
+        product_name: Product folder (``Morphs/<vendor>/<product>/...``).
+        base_data_path: Content directory to write into. Must be one of the
+            configured content directories; defaults to whatever the dialog
+            preselects (the last one used).
+        dialog_timeout: Seconds to wait for the dialog to appear/close
+            (default 30s).
+
+    Returns:
+        Dict with success, node, baseDataPath, vendorName, productName,
+        morphs (the ticked dialog rows) and files (morph name -> written
+        ``.dsf`` path).
+
+    Examples:
+        daz_save_modifier_asset(
+            "Leather Dress", ["LeatherDress_PullDown"],
+            vendor_name="blackbyte.de", product_name="Product",
+        )
+    """
+    _ui_automation.require_interactive_desktop()
+    if not morph_names:
+        raise ToolError("morph_names must list at least one morph to save.")
+
+    pre = await _execute_by_id(
+        "vangard-modifier-asset-preflight",
+        {"nodeLabel": node_label, "morphNames": morph_names},
+    )
+    if pre["missing"]:
+        available = [a["name"] for a in pre["available"]]
+        raise ToolError(
+            f"Morph(s) {pre['missing']} not found on '{pre['node']}'. Available: {available}"
+        )
+    if base_data_path is not None:
+        norm = os.path.normcase(os.path.normpath(base_data_path))
+        dirs = pre["contentDirectories"]
+        match = next((d for d in dirs if os.path.normcase(os.path.normpath(d)) == norm), None)
+        if match is None:
+            raise ToolError(
+                f"base_data_path {base_data_path!r} is not a configured content directory: {dirs}"
+            )
+        base_data_path = match
+
+    started = time.time() - 2.0
+    submitted = await _execute_by_id_async(
+        "vangard-trigger-modifier-asset-save", {"nodeLabel": node_label}
+    )
+    ui = await asyncio.to_thread(
+        _ui_automation.drive_modifier_asset_save,
+        pre["morphs"], vendor_name, product_name, base_data_path, dialog_timeout,
+    )
+    await _wait_for_async_result(submitted["request_id"], timeout_seconds=int(dialog_timeout) + 30)
+
+    # DAZ finishes writing shortly after the dialog closes — poll briefly.
+    deadline = time.monotonic() + min(dialog_timeout, 10.0)
+    files = _find_saved_modifier_files(ui["baseDataPath"], vendor_name, product_name, pre["morphs"], started)
+    while len(files) < len(pre["morphs"]) and time.monotonic() < deadline:
+        await asyncio.sleep(0.3)
+        files = _find_saved_modifier_files(ui["baseDataPath"], vendor_name, product_name, pre["morphs"], started)
+    missing_files = [m["name"] for m in pre["morphs"] if m["name"] not in files]
+    if missing_files:
+        raise ToolError(
+            f"Dialog accepted, but no new .dsf found for {missing_files} under "
+            f"{ui['baseDataPath']}/data/*/*/*/Morphs/{vendor_name}/{product_name}/"
+        )
+    return {
+        "success": True,
+        "node": pre["node"],
+        "baseDataPath": ui["baseDataPath"],
+        "vendorName": vendor_name,
+        "productName": product_name,
+        "morphs": ui["ticked"],
+        "files": files,
+    }

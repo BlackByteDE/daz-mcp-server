@@ -314,6 +314,39 @@ win32gui.SendMessage(dialog_hwnd, win32con.WM_COMMAND, win32api.MAKELONG(1, 0), 
 # path.exists() briefly rather than checking once immediately after Accept.
 ```
 
+### Modifier Asset export (`DzModifierSupportAssetFilter`) — confirmed live (Bug-Katalog #37)
+
+Same `DzAssetIOFilter` family as the Prop Asset filter, but **not usable headless**:
+
+```javascript
+var f = new DzModifierSupportAssetFilter();   // no setNode()
+var s = new DzFileIOSettings();
+f.getDefaultOptions(s);
+// Keys: RootLabel, BaseDataPath, VendorName, ProductName, NodeNames (SubSetting),
+//       CompressOutput, RunSilent ("yes"/"no" strings, like the Prop Asset filter)
+f.doSave(s, path, "");   // returns 0 and writes NOTHING
+```
+
+BROKEN, do not retry: every `NodeNames` layout tried live (node -> {morph: "1"},
+node -> {"General": {morph: "1"}}, flat node/morph keys, "General/morph",
+"/General/morph", "Morphs/morph", values "1"/"true"/"yes", output path ""/base/base+"/data")
+returns 0 with no file. `getDefaultOptions()`/`getOptions(s, false, "")` never fill
+`NodeNames`, even with the node selected — the morph selection exists only as the
+GUI dialog's checkbox tree (`Node > property group, e.g. "General" > morph`, nothing
+ticked by default).
+
+If the node itself was never saved as a Figure/Prop Asset, `doSave()` and the GUI
+action both pop a **modal** "Resource Error" box ("Figure/Prop Assets must be saved
+before saving Modifier Asset(s).") — `RunSilent` does not suppress it.
+
+What works: `daz_save_modifier_asset` drives the real dialog
+(`App.MorphAssetFilterDlg`) via UI Automation — UIA `Expand()`/`Toggle()` are
+no-ops on its tree, but keyboard input works (`*` expands all, Down/Space ticks
+a row, toggle state is readable for verification). Tick rows *before* editing the
+Vendor/Product fields: keyboard ticking alone does not re-enable the Accept button.
+The Asset Directory field is a read-only combo (`SetValue` → COMError), pick it
+with the arrow keys.
+
 ### Runtime bone rigging (`new DzBone` + `DzSkinBinding`) — confirmed live (Bug-Katalog #30)
 
 Adding a child bone to an existing figure at runtime (`new DzBone()` +
