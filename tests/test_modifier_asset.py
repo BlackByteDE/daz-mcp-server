@@ -1,8 +1,9 @@
 """Mock tests for daz_save_modifier_asset (Bug-Katalog #37).
 
-The dialog itself (``_ui_automation.drive_modifier_asset_save``) needs a real
-DAZ Studio window and is mocked out; these tests cover the preflight
-validation, the async-only trigger, and the written-file check.
+Covers the headless default path (``vangard-save-modifier-asset``) and the
+``use_ui_automation=True`` fallback. The dialog itself
+(``_ui_automation.drive_modifier_asset_save``) needs a real DAZ Studio window
+and is mocked out.
 """
 
 from __future__ import annotations
@@ -37,8 +38,11 @@ def _request_result(result) -> httpx.Response:
     return httpx.Response(200, json={"request_id": "x", "status": "completed", "result": result})
 
 
-def _preflight(missing=None):
+def _preflight(missing=None, saved=True, asset_dir=None):
     return {
+        "assetFile": "/data/V/P/Dress/Dress.dsf" if saved else "/D:/scene.duf",
+        "isSavedAsset": saved,
+        "assetContentDir": asset_dir,
         "node": "Leather Dress",
         "nodeName": "Dress",
         "morphs": [{"name": "LD_PullDown", "label": "Pull Down", "type": "DzMorph"}],
@@ -86,6 +90,7 @@ class TestSaveModifierAsset:
                           return_value={"LD_PullDown": written}):
             result = await daz_save_modifier_asset(
                 "Leather Dress", ["LD_PullDown"], "blackbyte.de", "Product", base_data_path=LIB,
+                use_ui_automation=True,
             )
         assert trigger.called
         args = drive.call_args.args
@@ -147,6 +152,7 @@ class TestSaveModifierAsset:
             with pytest.raises(ToolError, match="no new .dsf"):
                 await daz_save_modifier_asset(
                     "Leather Dress", ["LD_PullDown"], "v", "p", dialog_timeout=0.5,
+                    use_ui_automation=True,
                 )
 
     async def test_empty_morph_list_rejected(self, mock_daz, desktop_ok):
@@ -159,8 +165,75 @@ class TestSaveModifierAsset:
         )
         with patch(f"{UI}.require_interactive_desktop", side_effect=ToolError("locked")):
             with pytest.raises(ToolError, match="locked"):
-                await daz_save_modifier_asset("Leather Dress", ["LD_PullDown"], "v", "p")
+                await daz_save_modifier_asset(
+                    "Leather Dress", ["LD_PullDown"], "v", "p", use_ui_automation=True,
+                )
         assert not preflight.called
+
+
+class TestSaveModifierAssetHeadless:
+    async def test_headless_payload_and_no_dialog(self, mock_daz):
+        mock_daz.post("/scripts/vangard-modifier-asset-preflight/execute").mock(
+            return_value=_ok(_preflight(asset_dir="C:/Public Library"))
+        )
+        captured = {}
+
+        def capture(request):
+            captured.update(json.loads(request.content))
+            return _ok({"success": True})
+
+        mock_daz.post("/scripts/vangard-save-modifier-asset/execute").mock(side_effect=capture)
+        trigger = mock_daz.post("/scripts/vangard-trigger-modifier-asset-save/async").mock(
+            return_value=_async_submitted("never")
+        )
+        with patch(f"{UI}.require_interactive_desktop") as desktop:
+            result = await daz_save_modifier_asset(
+                "Leather Dress", ["Pull Down"], "blackbyte.de", "Product", compress_output=False,
+            )
+        desktop.assert_not_called()
+        assert not trigger.called
+        args = captured["args"]
+        # Labels are resolved to internal names by the preflight; the base dir
+        # defaults to the content directory holding the item's own asset.
+        assert args["morphNames"] == ["LD_PullDown"]
+        assert args["baseDataPath"] == "C:/Public Library"
+        assert args["compressOutput"] is False
+        assert "forceUniqueIds" not in args
+        assert result["success"] is True
+        assert result["files"] is None  # base dir not reachable from the test machine
+
+    async def test_default_base_falls_back_to_first_content_dir(self, mock_daz):
+        mock_daz.post("/scripts/vangard-modifier-asset-preflight/execute").mock(
+            return_value=_ok(_preflight())
+        )
+        save = mock_daz.post("/scripts/vangard-save-modifier-asset/execute").mock(
+            return_value=_ok({"success": True})
+        )
+        result = await daz_save_modifier_asset("Leather Dress", ["LD_PullDown"], "v", "p")
+        assert json.loads(save.calls.last.request.content)["args"]["baseDataPath"] == LIB
+        assert result["baseDataPath"] == LIB
+
+    async def test_unsaved_item_rejected_before_save(self, mock_daz):
+        mock_daz.post("/scripts/vangard-modifier-asset-preflight/execute").mock(
+            return_value=_ok(_preflight(saved=False))
+        )
+        save = mock_daz.post("/scripts/vangard-save-modifier-asset/execute").mock(
+            return_value=_ok({"success": True})
+        )
+        with pytest.raises(ToolError, match="daz_save_prop_asset"):
+            await daz_save_modifier_asset("Leather Dress", ["LD_PullDown"], "v", "p")
+        assert not save.called
+
+    async def test_missing_file_raises_when_dir_reachable(self, mock_daz, tmp_path):
+        lib = str(tmp_path)
+        pre = _preflight(asset_dir=lib)
+        pre["contentDirectories"] = [lib]
+        mock_daz.post("/scripts/vangard-modifier-asset-preflight/execute").mock(return_value=_ok(pre))
+        mock_daz.post("/scripts/vangard-save-modifier-asset/execute").mock(
+            return_value=_ok({"success": True})
+        )
+        with pytest.raises(ToolError, match="cloud-encrypted"):
+            await daz_save_modifier_asset("Leather Dress", ["LD_PullDown"], "v", "p")
 
 
 class TestFindSavedModifierFiles:

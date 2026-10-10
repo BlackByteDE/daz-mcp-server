@@ -16,14 +16,207 @@ from __future__ import annotations
 
 from ._registry import _RESOLVE_NODE_JS
 
-# Phase 6.14: Wearable Preset save trigger (Bug-Katalog #22 Teil 2)
+# Phase 6.14: Wearable Preset save (Bug-Katalog #22 Teil 2)
+#
+# Headless path, live-verified 2026-10-10. DzWearablesAssetFilter.doSave()
+# works silently once its settings are laid out the way the filter reads
+# them — the long-standing errCode 98 came from a wrong NodeNames layout:
+#   - RunSilent is a Bool (setBoolValue), not the "yes" string the
+#     DzNodeSupportAssetFilter uses.
+#   - NodeNames holds String entries whose VALUE is the node's LABEL (the
+#     key is ignored); the filter resolves it via Scene.findNodeByLabel(),
+#     so labels must be unique in the scene. Only the listed nodes end up
+#     in the preset.
+#   - SmartParent / PoseTarget / BypassFilter / CompressOutput /
+#     SaveSimulationData are Bools on the top-level settings.
+# doSave() return codes seen: 98 (NodeNames empty, or the final write
+# failed), 100 (no NodeNames entry resolved to a scene node), 528 (empty
+# output path).
+_SAVE_WEARABLE_PRESET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var fig = resolveNode(args.figureLabel);
+
+    var nodes = [];
+    var i, n;
+    if (args.items && args.items.length) {
+        for (i = 0; i < args.items.length; i++) nodes.push(resolveNode(args.items[i]));
+    } else {
+        // Same notion of "fitted" as daz_list_fitted_items, minus the
+        // figure's own bones (they show up as direct children).
+        for (i = 0; i < Scene.getNumNodes(); i++) {
+            n = Scene.getNode(i);
+            if (!n || n === fig || n.inherits("DzBone")) continue;
+            var ft = (typeof n.getFollowTarget === "function") ? n.getFollowTarget() : null;
+            var parent = (typeof n.getNodeParent === "function") ? n.getNodeParent() : null;
+            if ((ft && ft.elementID === fig.elementID) ||
+                (parent && parent.elementID === fig.elementID)) nodes.push(n);
+        }
+    }
+    if (nodes.length === 0) {
+        throw new Error("Nothing to save: no items are fit or parented to '" + fig.getLabel() + "'");
+    }
+
+    var labels = [];
+    for (i = 0; i < nodes.length; i++) {
+        var lbl = nodes[i].getLabel();
+        var first = Scene.findNodeByLabel(lbl);
+        if (!first || first.elementID !== nodes[i].elementID) {
+            throw new Error("Label '" + lbl + "' is not unique in the scene; the Wearable(s) " +
+                "Preset filter resolves items by label and would save the wrong node. " +
+                "Rename one of them first.");
+        }
+        labels.push(lbl);
+    }
+
+    Scene.selectAllNodes(false);
+    fig.select(true);
+
+    var filter = new DzWearablesAssetFilter();
+    var s = new DzFileIOSettings();
+    filter.getDefaultOptions(s);
+    s.setBoolValue("RunSilent", true);
+    var nn = s.getSettingsValue("NodeNames");
+    for (i = 0; i < labels.length; i++) nn.setStringValue(String(i), labels[i]);
+    s.setSettingsValue("NodeNames", nn);
+    s.setBoolValue("SmartParent", args.smartParent !== false);
+    s.setBoolValue("PoseTarget", args.poseTarget === true);
+    s.setBoolValue("BypassFilter", true);
+    if (args.compressOutput !== undefined) s.setBoolValue("CompressOutput", !!args.compressOutput);
+    if (args.saveSimulationData !== undefined) s.setBoolValue("SaveSimulationData", !!args.saveSimulationData);
+
+    var err = filter.doSave(s, args.outputPath, "");
+    var code = (err && err.valueOf) ? err.valueOf() : err;
+    if (code !== 0) {
+        var why = {
+            98: "no items resolved, or writing the file failed (check DAZ Studio's log.txt)",
+            100: "none of the item labels resolved to a scene node",
+            528: "empty output path"
+        }[code] || "unknown error";
+        throw new Error("DzWearablesAssetFilter.doSave failed (error code " + code + "): " + why);
+    }
+
+    var outPath = args.outputPath.replace(/\\.[^.\\/\\\\]*$/, "") + ".duf";
+    if (!new DzFileInfo(outPath).exists()) {
+        throw new Error("doSave reported success but no file exists at " + outPath);
+    }
+    return { success: true, figure: fig.getLabel(), outputPath: outPath, items: labels };
+})()
+"""
+
+# Content-Library thumbnails for a saved asset (<name>.duf.png 91x91,
+# <name>.tip.png 256x256, RGBA with transparent background). Neither
+# DzWearablesAssetFilter nor DzNodeSupportAssetFilter writes them headless.
+# Live-verified 2026-10-10: Dz3DViewport.captureImage() returns a null image
+# and renderThumbnail(node, path) returns false on the Filament viewport, so
+# this goes through a regular render-to-file with the "Viewport" engine
+# (renderType ScreenShot — fast, no Iray): hide everything except the items
+# and their descendants, aim a temporary camera at their combined bounding
+# box (3/4 front view, distance from the camera's field of view), render
+# each size, then restore visibility, render options, viewport camera and
+# selection in a finally block. opts.aspectWidth/aspectHeight are read-only
+# — imageSize alone sets the square output.
+_RENDER_ASSET_THUMBNAIL_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var items = [];
+    var i, n;
+    for (i = 0; i < (args.nodeLabels || []).length; i++) items.push(resolveNode(args.nodeLabels[i]));
+    if (items.length === 0) throw new Error("nodeLabels must name at least one node");
+    var outputs = args.outputs || [];
+
+    function isInside(node) {
+        while (node) {
+            for (var k = 0; k < items.length; k++) if (node === items[k]) return true;
+            node = node.getNodeParent();
+        }
+        return false;
+    }
+
+    var rm = App.getRenderMgr(), opts = rm.getRenderOptions();
+    var v3 = MainWindow.getViewportMgr().getActiveViewport().get3DViewport();
+    var helper = rm.getOptionHelper();
+    var np = helper ? helper.findProperty("Image Name") : null;
+    var pp = helper ? helper.findProperty("Image Path") : null;
+    var saved = { renderType: opts.renderType, toId: opts.renderImgToId, file: opts.renderImgFilename,
+        w: opts.imageSize.width, h: opts.imageSize.height, cam: opts.camera, vpCam: v3.getCamera(),
+        np: np ? np.getValue() : null, pp: pp ? pp.getValue() : null, sel: Scene.getPrimarySelection() };
+    var hidden = [], cam = null, written = [], failure = null, restoreErrors = [];
+    function restore(name, fn) { try { fn(); } catch (e) { restoreErrors.push(name + ": " + e); } }
+
+    try {
+        for (i = 0; i < Scene.getNumNodes(); i++) {
+            n = Scene.getNode(i);
+            if (!n.getObject() || isInside(n)) continue;
+            if (n.isVisible()) { n.setVisible(false); hidden.push(n); }
+        }
+        var bb = items[0].getWSBoundingBox();
+        var minX = bb.minX, minY = bb.minY, minZ = bb.minZ, maxX = bb.maxX, maxY = bb.maxY, maxZ = bb.maxZ;
+        for (i = 1; i < items.length; i++) {
+            bb = items[i].getWSBoundingBox();
+            minX = Math.min(minX, bb.minX); minY = Math.min(minY, bb.minY); minZ = Math.min(minZ, bb.minZ);
+            maxX = Math.max(maxX, bb.maxX); maxY = Math.max(maxY, bb.maxY); maxZ = Math.max(maxZ, bb.maxZ);
+        }
+        var c = new DzVec3((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+        var dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+        var radius = Math.sqrt(dx * dx + dy * dy + dz * dz) / 2;
+
+        cam = new DzBasicCamera();
+        cam.setName("ZZThumbCam"); cam.setLabel("ZZThumbCam");
+        Scene.addNode(cam);
+        var fov = cam.getFieldOfView();
+        var dist = radius / Math.sin(fov / 2) * 1.02;
+        // 3/4 view from the front (Genesis faces +Z), slightly above.
+        var len = Math.sqrt(0.25 + 0.1225 + 1);
+        cam.setWSPos(new DzVec3(c.x + 0.5 / len * dist, c.y + 0.35 / len * dist, c.z + 1.0 / len * dist));
+        cam.aimAt(c);
+        v3.setCamera(cam);
+
+        opts.renderType = opts.ScreenShot;
+        opts.camera = cam;
+        opts.renderImgToId = opts.DirectToFile;
+        for (i = 0; i < outputs.length; i++) {
+            var path = outputs[i].path, size = outputs[i].size;
+            var slash = path.lastIndexOf("/");
+            new DzDir(path.substring(0, slash)).mkpath(path.substring(0, slash));
+            opts.imageSize = new QSize(size, size);
+            opts.renderImgFilename = path;
+            if (np) np.setValue(path.substring(slash + 1));
+            if (pp) pp.setValue(path.substring(0, slash));
+            opts.applyChanges();
+            MainWindow.repaintActive3DViewport();
+            rm.doRender(opts);
+            if (!new DzFileInfo(path).exists()) throw new Error("Render wrote no file at " + path);
+            written.push({ path: path, size: size });
+        }
+    } catch (e) {
+        failure = String(e);
+    } finally {
+        for (var j = 0; j < hidden.length; j++) restore("visibility", function(){ hidden[j].setVisible(true); });
+        restore("renderType", function(){ opts.renderType = saved.renderType; });
+        restore("renderImgToId", function(){ opts.renderImgToId = saved.toId; });
+        restore("renderImgFilename", function(){ opts.renderImgFilename = saved.file; });
+        restore("imageSize", function(){ opts.imageSize = new QSize(saved.w, saved.h); });
+        restore("camera", function(){ opts.camera = saved.cam; });
+        restore("Image Name", function(){ if (np && saved.np !== null) np.setValue(saved.np); });
+        restore("Image Path", function(){ if (pp && saved.pp !== null) pp.setValue(saved.pp); });
+        restore("applyChanges", function(){ opts.applyChanges(); });
+        restore("viewport camera", function(){ if (saved.vpCam) v3.setCamera(saved.vpCam); });
+        restore("temp camera", function(){ if (cam) Scene.removeNode(cam); });
+        restore("selection", function(){ Scene.selectAllNodes(false); if (saved.sel) saved.sel.select(true); });
+    }
+    if (failure) throw new Error("Thumbnail render failed: " + failure +
+        (restoreErrors.length ? " (restore problems: " + restoreErrors.join("; ") + ")" : ""));
+    var labels = [];
+    for (i = 0; i < items.length; i++) labels.push(items[i].getLabel());
+    return { success: true, nodes: labels, files: written, restoreErrors: restoreErrors };
+})()
+"""
+
+# UI-Automation fallback for the same save (use_ui_automation=True).
 # Selects the target figure and fires DzWearablesAssetFilterAction. This
 # BLOCKS on two native dialogs (a file-save dialog, then a Qt options
 # dialog) — must be submitted via the async endpoint. The Python-side
 # tool (daz_save_wearable_preset, _ui_automation.py) drives those dialogs
-# via Windows UI Automation once this has fired; DzWearablesAssetFilter's
-# own doSave() script API reproducibly fails with an unexplained generic
-# error and is not used here (see docs/daz-mcp-bridge-bugs.md #22 Teil 2).
+# via Windows UI Automation once this has fired.
 _TRIGGER_WEARABLE_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
     var fig = resolveNode(args.figureLabel);
@@ -39,13 +232,9 @@ _TRIGGER_WEARABLE_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 
 # Phase 6.20: Modifier Asset save (Bug-Katalog #37)
 #
-# DzModifierSupportAssetFilter.doSave() returns 0 but writes nothing under
-# every NodeNames layout tried live (node -> morph, node -> group -> morph,
-# flat, path-style keys, ...): which morphs get saved is chosen only by the
-# checkbox tree in the GUI dialog, which getDefaultOptions()/getOptions()
-# never populate. So, like the Wearable Preset path, the Python side drives
-# the real dialog via UI Automation. The preflight runs synchronously first
-# so a typo'd morph name fails fast instead of after a dialog was opened.
+# Preflight shared by the headless path (_SAVE_MODIFIER_ASSET_SCRIPT below)
+# and the UI-Automation fallback: runs synchronously first so a typo'd morph
+# name or an unsaved item fails fast instead of after a dialog was opened.
 _MODIFIER_ASSET_PREFLIGHT_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var args = getArguments()[0] || {};
     var node = resolveNode(args.nodeLabel);
@@ -71,8 +260,73 @@ _MODIFIER_ASSET_PREFLIGHT_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     var cm = App.getContentMgr();
     var dirs = [];
     for (var k = 0; k < cm.getNumContentDirectories(); k++) dirs.push(cm.getContentDirectoryPath(k));
+    // The filter refuses (with a MODAL "Resource Error", RunSilent or not)
+    // unless the node itself comes from a saved .dsf asset.
+    var assetFile = (node.assetUri && node.assetUri.filePath) ? String(node.assetUri.filePath) : "";
+    var assetContentDir = null;
+    for (var d = 0; d < dirs.length && assetFile; d++) {
+        if (new DzFileInfo(dirs[d] + assetFile).exists()) { assetContentDir = dirs[d]; break; }
+    }
     return { node: node.getLabel(), nodeName: node.getName(), morphs: morphs,
-             missing: missing, available: available, contentDirectories: dirs };
+             missing: missing, available: available, contentDirectories: dirs,
+             assetFile: assetFile, isSavedAsset: /\\.dsf$/i.test(assetFile),
+             assetContentDir: assetContentDir };
+})()
+"""
+
+# Headless Modifier Asset save, live-verified 2026-10-10 (Bug-Katalog #37).
+# The long-standing "returns 0, writes nothing" came from a wrong NodeNames
+# layout. What DzModifierSupportAssetFilter actually reads in silent mode:
+#   - RunSilent: Bool.
+#   - Root node: RootLabel (resolved via findNodeByLabel) or, if empty, the
+#     primary selection — we leave RootLabel empty and select the node, so a
+#     duplicate label can't pick the wrong one.
+#   - BaseDataPath / VendorName / ProductName: required strings.
+#   - NodeNames: sub-settings keyed by the root node's NAME (or a bone name);
+#     each holds String entries whose VALUE is a property's internal name —
+#     the morph name; keys are ignored. Morphs from cloud-encrypted files
+#     are skipped silently.
+#   - CompressOutput / ForceUniqueIDs: Bools. The doSave() path argument is
+#     ignored; files go to <BaseDataPath>/data/<item asset dir>/Morphs/
+#     <vendor>/<product>/<morph>.dsf.
+# Two failure modes still show a MODAL box regardless of RunSilent (no root
+# node; node not from a .dsf asset) — the preflight rules both out first.
+_SAVE_MODIFIER_ASSET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var node = resolveNode(args.nodeLabel);
+    var assetFile = (node.assetUri && node.assetUri.filePath) ? String(node.assetUri.filePath) : "";
+    if (!/\\.dsf$/i.test(assetFile)) {
+        throw new Error("Node '" + node.getLabel() + "' is not backed by a saved Figure/Prop " +
+            "Asset (.dsf) — save it with daz_save_prop_asset first.");
+    }
+    Scene.selectAllNodes(false);
+    node.select(true);
+
+    var f = new DzModifierSupportAssetFilter();
+    var s = new DzFileIOSettings();
+    f.getDefaultOptions(s);
+    s.setBoolValue("RunSilent", true);
+    s.setStringValue("RootLabel", "");
+    s.setStringValue("BaseDataPath", args.baseDataPath);
+    s.setStringValue("VendorName", args.vendorName);
+    s.setStringValue("ProductName", args.productName);
+    var nn = s.getSettingsValue("NodeNames");
+    var sub = new DzSettings();
+    var names = args.morphNames || [];
+    for (var i = 0; i < names.length; i++) sub.setStringValue(String(i), names[i]);
+    nn.setSettingsValue(node.getName(), sub);
+    s.setSettingsValue("NodeNames", nn);
+    if (args.compressOutput !== undefined) s.setBoolValue("CompressOutput", !!args.compressOutput);
+    if (args.forceUniqueIds !== undefined) s.setBoolValue("ForceUniqueIDs", !!args.forceUniqueIds);
+
+    var err = f.doSave(s, "", "");
+    var code = (err && err.valueOf) ? err.valueOf() : err;
+    if (code !== 0) {
+        throw new Error("DzModifierSupportAssetFilter.doSave failed (error code " + code +
+            ") — check DAZ Studio's log.txt for a 'Running silent. No ... defined.' line");
+    }
+    return { success: true, node: node.getLabel(), assetFile: assetFile,
+             baseDataPath: args.baseDataPath, morphs: names };
 })()
 """
 
@@ -455,6 +709,16 @@ _SET_SHELL_VISIBILITY_SCRIPT = """\
 # Registry entries: script_id → (description, script_text)
 # Merged into _REGISTRY by _register_scripts() in _registry.py.
 _REGISTRY_FORK: dict[str, tuple[str, str]] = {
+    "vangard-save-wearable-preset": (
+        "Save chosen items fitted to a figure as a Wearable(s) Preset via "
+        "DzWearablesAssetFilter.doSave() — headless, no dialogs",
+        _SAVE_WEARABLE_PRESET_SCRIPT,
+    ),
+    "vangard-render-asset-thumbnail": (
+        "Render Content-Library thumbnails (.duf.png 91px, .tip.png 256px, transparent) "
+        "of one or more nodes with the Viewport engine, restoring the scene afterwards",
+        _RENDER_ASSET_THUMBNAIL_SCRIPT,
+    ),
     "vangard-trigger-wearable-save": (
         "Select a figure and fire DzWearablesAssetFilterAction (File > Save As > "
         "Wearable(s) Preset) — blocks on native dialogs, submit via async endpoint only; "
@@ -465,6 +729,11 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Resolve a node and check that the named morphs/modifiers exist on it "
         "before daz_save_modifier_asset opens the Modifier Asset(s) save dialog",
         _MODIFIER_ASSET_PREFLIGHT_SCRIPT,
+    ),
+    "vangard-save-modifier-asset": (
+        "Save named morphs of a saved Figure/Prop Asset as Modifier Assets via "
+        "DzModifierSupportAssetFilter.doSave() — headless, no dialogs",
+        _SAVE_MODIFIER_ASSET_SCRIPT,
     ),
     "vangard-trigger-modifier-asset-save": (
         "Select a node and fire DzModifierAssetFilterAction (File > Save As > "

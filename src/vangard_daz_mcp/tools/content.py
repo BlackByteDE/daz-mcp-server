@@ -339,13 +339,8 @@ async def daz_save_prop_asset(
           generates one lazily the first time it browses the folder, or you can
           render/place one yourself as ``<output_path>.png`` next to the .duf.
         - For a "Wearable Preset" (auto-fit-to-figure behavior when dragged
-          from Smart Content, like a clothing/hair outfit), the underlying
-          ``DzWearablesAssetFilter`` was investigated but not solved — its
-          ``doSave()`` reproducibly failed with a generic error code across
-          several configurations (asset-backed vs. ad-hoc geometry, with/
-          without a parent node, various ``NodeNames``/``MaterialNames``
-          settings). Use this Prop Asset tool instead; it covers the
-          "Support Asset" half of the original request.
+          from Smart Content, like a clothing/hair outfit), use
+          ``daz_save_wearable_preset`` instead.
     """
     payload: dict[str, Any] = {
         "nodeLabel": node_label,
@@ -377,71 +372,149 @@ async def daz_save_prop_asset(
     return await _execute_by_id("vangard-save-prop-asset", payload)
 
 
+def _thumbnail_outputs(duf_path: str) -> list[dict[str, Any]]:
+    """Content-Library thumbnail files for a ``.duf``: ``<name>.duf.png``
+    (91x91, list view) and ``<name>.tip.png`` (256x256, tooltip). Other sizes
+    show unreliably in the Content Library pane (Bug-Katalog #22)."""
+    duf = duf_path.replace("\\", "/")
+    stem = duf[:-4] if duf.lower().endswith(".duf") else duf
+    return [{"path": f"{stem}.duf.png", "size": 91}, {"path": f"{stem}.tip.png", "size": 256}]
+
+
+@mcp.tool()
+async def daz_render_asset_thumbnail(node_labels: list[str], duf_path: str) -> dict[str, Any]:
+    """Render Content-Library thumbnails for a saved asset ``.duf``.
+
+    Writes ``<name>.duf.png`` (91x91) and ``<name>.tip.png`` (256x256) next to
+    ``duf_path`` — RGBA with a transparent background, the sizes the Content
+    Library pane shows reliably. Useful after ``daz_save_prop_asset`` and the
+    headless ``daz_save_wearable_preset``, which write no thumbnail.
+
+    Renders with the **Viewport** engine (no Iray, takes about a second):
+    temporarily hides everything except ``node_labels`` and their children,
+    aims a temporary camera at them (3/4 front view), renders, then restores
+    visibility, render settings, viewport camera and selection.
+
+    Args:
+        node_labels: Label(s)/name(s)/elementID(s) of the node(s) to show.
+            Several nodes (e.g. all items of a wearable preset) are framed
+            together.
+        duf_path: Path of the asset ``.duf`` the thumbnails belong to (need
+            not exist yet).
+
+    Returns:
+        Dict with success, nodes and files (list of {path, size}).
+
+    Examples:
+        daz_render_asset_thumbnail(
+            ["samor_1125_61_front"],
+            "C:/Users/Public/Documents/My DAZ 3D Library/Props/Hair/Samor61.duf",
+        )
+    """
+    if not node_labels:
+        raise ToolError("node_labels must name at least one node.")
+    return await _execute_by_id(
+        "vangard-render-asset-thumbnail",
+        {"nodeLabels": node_labels, "outputs": _thumbnail_outputs(duf_path)},
+    )
+
+
 @mcp.tool()
 async def daz_save_wearable_preset(
     figure_label: str,
     output_path: str,
+    items: list[str] | None = None,
+    smart_parent: bool = True,
+    pose_target: bool = False,
+    compress_output: bool | None = None,
+    save_simulation_data: bool | None = None,
+    thumbnail: bool = True,
+    use_ui_automation: bool = False,
     dialog_timeout: float = 30.0,
 ) -> dict[str, Any]:
-    """Save a figure (with everything currently fitted to it) as a reusable
-    Wearable(s) Preset — the fit-to-figure asset type, as opposed to
-    ``daz_save_prop_asset``'s plain geometry-only Support Asset.
+    """Save items fitted to a figure as a reusable Wearable(s) Preset — the
+    fit-to-figure asset type, as opposed to ``daz_save_prop_asset``'s plain
+    geometry-only Support Asset.
 
-    Headless-*ish* equivalent of **File > Save As > Wearable(s) Preset**.
-    "Headless-ish" because the underlying ``DzWearablesAssetFilter`` script
-    API (``doSave()``) was found to reproducibly fail with an unexplained
-    generic error code under every configuration tried (see
-    ``docs/daz-mcp-bridge-bugs.md`` Bug 22 Teil 2 for the full investigation)
-    — but the real GUI action works, so this tool drives *that* action's two
-    native dialogs directly via Windows UI Automation (``pywinauto``)
-    instead. No DAZ Studio window needs to be focused or in the foreground
-    for this — everything is done via the accessibility tree and posted
-    window messages.
-
-    **Windows-only, and only works when this MCP server process runs on the
-    same machine as DAZ Studio** — there is no remote-UI-automation path.
+    Headless equivalent of **File > Save As > Wearable(s) Preset**, via
+    ``DzWearablesAssetFilter.doSave()`` — no dialogs, works with a remote
+    DAZ Studio too. The written preset fits its items to whatever figure is
+    selected when it is loaded (``conform_target`` = ``@selection``).
 
     Args:
-        figure_label: Display label of the figure to save (e.g.
-            ``"Genesis 8 Female"``). Must already have at least one item
-            fit or parented to it — DAZ Studio itself refuses to save a
-            Wearable(s) Preset otherwise ("A figure in the scene with other
-            objects fit or parented to it must be selected...").
-        output_path: Absolute path for the ``.duf`` file. Its parent
-            directory is created automatically if missing (the native save
-            dialog does **not** create missing subfolders on its own and
-            errors instead).
-        dialog_timeout: Seconds to wait for each native dialog to appear/
-            close before giving up (default 30s). Increase if DAZ Studio is
-            slow to respond (e.g. a very heavy scene).
+        figure_label: Display label of the figure the items are fitted to
+            (e.g. ``"Genesis 8 Female"``).
+        output_path: Absolute path for the ``.duf`` file (extension is forced
+            to ``.duf``). Typically under ``<content dir>/Presets/Wearables/``.
+        items: Labels (or names/elementIDs) of the items to include. Only
+            these end up in the preset. Defaults to every item fit or
+            parented to the figure. Each item's label must be unique in the
+            scene — the filter resolves items by label.
+        smart_parent: Smart-parent the items to the target figure on load
+            (default True, matches the dialog's default for fitted items).
+        pose_target: Include the target figure's pose (default False).
+        compress_output: Compress the ``.duf`` (plugin default: on).
+        save_simulation_data: Include dForce simulation data (plugin
+            default: on).
+        thumbnail: Also render the Content-Library thumbnails
+            (``.duf.png``/``.tip.png``) via ``daz_render_asset_thumbnail``
+            (default True). A failed thumbnail render does not fail the
+            save — it is reported as ``thumbnailError``.
+        use_ui_automation: Fall back to driving the real GUI dialogs via
+            Windows UI Automation (the pre-0.5.8+bb.10 behavior). Windows-only,
+            same machine as DAZ Studio, always bundles *every* fitted item
+            (``items`` must be omitted); thumbnails come from DAZ itself there.
+        dialog_timeout: Only for ``use_ui_automation`` — seconds to wait for
+            each native dialog (default 30s).
 
     Returns:
-        Dict with success and outputPath.
+        Dict with success, figure, outputPath, items (labels saved) and
+        thumbnails (written files) or thumbnailError.
 
     Examples:
         daz_save_wearable_preset(
             "Genesis 8 Female",
-            "C:/Users/me/Documents/DAZ 3D/Studio/My Library/Presets/Wearables/My Hair.duf",
+            "C:/Users/me/Documents/DAZ 3D/Studio/My Library/Presets/Wearables/Jacket.duf",
+            items=["Female_Jacket"],
         )
 
     Notes:
-        - Bundles **every** item currently fit/parented to the figure, not
-          just one you care about — the dialog's own node-selection
-          checklist has no confirmed programmatic toggle mechanism (its
-          items are custom-painted, not standard checkable controls; see
-          Bug 22 Teil 2). If the figure is wearing other things you don't
-          want included, unfit them first (``daz_unfit_item``), save, then
-          re-fit them.
-        - Produces a real thumbnail (``<output>.duf.png``/``.tip.png``)
-          automatically — unlike ``daz_save_prop_asset``, which does not.
-        - Live-verified end to end (2026-09-09) against a real figure with
-          a fitted test prop, then fully reverted — no lasting scene changes.
+        - Bug-Katalog #22 Teil 2: the long-standing ``errCode 98`` was a
+          wrong ``NodeNames`` layout, not a broken API — see
+          SKILL_DAZSCRIPT.md for the settings the filter actually reads.
     """
-    _ui_automation._require_pywinauto()  # pylint: disable=protected-access
-    await _execute_by_id_async("vangard-trigger-wearable-save", {"figureLabel": figure_label})
-    return await asyncio.to_thread(
-        _ui_automation.drive_wearable_preset_save, output_path, dialog_timeout
-    )
+    if use_ui_automation:
+        if items:
+            raise ToolError(
+                "items cannot be combined with use_ui_automation=True — the dialog "
+                "path always bundles every item fitted to the figure"
+            )
+        _ui_automation._require_pywinauto()  # pylint: disable=protected-access
+        await _execute_by_id_async("vangard-trigger-wearable-save", {"figureLabel": figure_label})
+        return await asyncio.to_thread(
+            _ui_automation.drive_wearable_preset_save, output_path, dialog_timeout
+        )
+
+    payload: dict[str, Any] = {
+        "figureLabel": figure_label,
+        "outputPath": output_path,
+        "smartParent": smart_parent,
+        "poseTarget": pose_target,
+    }
+    if items:
+        payload["items"] = items
+    if compress_output is not None:
+        payload["compressOutput"] = compress_output
+    if save_simulation_data is not None:
+        payload["saveSimulationData"] = save_simulation_data
+    result = await _execute_by_id("vangard-save-wearable-preset", payload)
+    if thumbnail:
+        try:
+            thumbs = await daz_render_asset_thumbnail(result["items"], result["outputPath"])
+            result["thumbnails"] = thumbs["files"]
+        except ToolError as exc:
+            result["thumbnailError"] = str(exc)
+    return result
 
 
 def _find_saved_modifier_files(
@@ -473,57 +546,66 @@ async def daz_save_modifier_asset(
     vendor_name: str,
     product_name: str,
     base_data_path: str | None = None,
+    compress_output: bool | None = None,
+    force_unique_ids: bool | None = None,
+    use_ui_automation: bool = False,
     dialog_timeout: float = 30.0,
 ) -> dict[str, Any]:
     """Save selected morphs of a node as Content-Library Modifier Assets (.dsf).
 
-    Equivalent of **File > Save As > Support Asset > Modifier Asset(s)...**
-    with exactly ``morph_names`` ticked. Afterwards the morphs load
-    automatically with the item in every scene, and a scene ``.duf`` stores
-    only their values instead of the deltas. Typical use: persisting a morph
-    created with ``daz_load_morph_pro`` on a clothing item.
-
-    ``DzModifierSupportAssetFilter.doSave()`` returns success but writes
-    nothing (the morph selection lives only in the dialog's checkbox tree,
-    Bug-Katalog #37), so this tool drives the real dialog via Windows UI
-    Automation. **Windows-only, MCP server must run on the same machine as
-    DAZ Studio.** Unlike ``daz_save_wearable_preset`` this dialog needs
-    keyboard input, so DAZ Studio is briefly brought to the foreground —
-    don't type into other windows while it runs — and it needs an unlocked
-    interactive desktop (it refuses up front while the workstation is
-    locked, before any dialog is opened).
+    Headless equivalent of **File > Save As > Support Asset > Modifier
+    Asset(s)...** with exactly ``morph_names`` ticked, via
+    ``DzModifierSupportAssetFilter.doSave()`` — no dialogs, works with a
+    remote DAZ Studio too. Afterwards the morphs load automatically with the
+    item in every scene, and a scene ``.duf`` stores only their values
+    instead of the deltas. Typical use: persisting a morph created with
+    ``daz_load_morph_pro`` on a clothing item.
 
     Args:
         node_label: Display label, internal name, elementID, or
             ``Parent/Label`` of the node carrying the morphs. The node itself
             must be backed by a saved Figure/Prop Asset (loaded from the
-            content library, or saved via ``daz_save_prop_asset``) — DAZ
-            Studio refuses otherwise; the tool reports that as an error.
+            content library, or saved via ``daz_save_prop_asset``) — checked
+            up front, since DAZ Studio would otherwise pop a modal error.
         morph_names: Internal names or labels of the morphs to save (as
-            listed by ``daz_list_morphs``). Only these are ticked.
+            listed by ``daz_list_morphs``).
         vendor_name: Vendor/author folder (``Morphs/<vendor>/...``), e.g.
             ``"blackbyte.de"``.
         product_name: Product folder (``Morphs/<vendor>/<product>/...``).
         base_data_path: Content directory to write into. Must be one of the
-            configured content directories; defaults to whatever the dialog
-            preselects (the last one used).
-        dialog_timeout: Seconds to wait for the dialog to appear/close
-            (default 30s).
+            configured content directories; defaults to the one holding the
+            item's own asset (falls back to the first configured one).
+        compress_output: Compress the written ``.dsf`` (plugin default: on).
+        force_unique_ids: Force new unique asset IDs (plugin default: off).
+        use_ui_automation: Fall back to driving the real dialog via Windows
+            UI Automation (the pre-0.5.8+bb.10 behavior). Windows-only, same
+            machine as DAZ Studio, needs an unlocked desktop and briefly
+            brings DAZ Studio to the foreground (keyboard input).
+        dialog_timeout: Only for ``use_ui_automation`` — seconds to wait for
+            the dialog (default 30s).
 
     Returns:
         Dict with success, node, baseDataPath, vendorName, productName,
-        morphs (the ticked dialog rows) and files (morph name -> written
-        ``.dsf`` path).
+        morphs and files (morph name -> written ``.dsf`` path; ``None`` when
+        the content directory isn't reachable from this machine, i.e. DAZ
+        Studio runs remotely).
 
     Examples:
         daz_save_modifier_asset(
             "Leather Dress", ["LeatherDress_PullDown"],
             vendor_name="blackbyte.de", product_name="Product",
         )
+
+    Notes:
+        - Bug-Katalog #37: the old "returns 0, writes nothing" was a wrong
+          ``NodeNames`` layout, not a broken API — see SKILL_DAZSCRIPT.md.
+        - Morphs coming from cloud-encrypted (DAZ Connect) files are skipped
+          by DAZ Studio itself; the tool reports them as not written.
     """
-    _ui_automation.require_interactive_desktop()
     if not morph_names:
         raise ToolError("morph_names must list at least one morph to save.")
+    if use_ui_automation:
+        _ui_automation.require_interactive_desktop()
 
     pre = await _execute_by_id(
         "vangard-modifier-asset-preflight",
@@ -533,6 +615,11 @@ async def daz_save_modifier_asset(
         available = [a["name"] for a in pre["available"]]
         raise ToolError(
             f"Morph(s) {pre['missing']} not found on '{pre['node']}'. Available: {available}"
+        )
+    if not pre.get("isSavedAsset", True):
+        raise ToolError(
+            f"'{pre['node']}' is not backed by a saved Figure/Prop Asset (.dsf; asset file: "
+            f"{pre.get('assetFile') or 'none'}). Save it with daz_save_prop_asset first."
         )
     if base_data_path is not None:
         norm = os.path.normcase(os.path.normpath(base_data_path))
@@ -545,6 +632,40 @@ async def daz_save_modifier_asset(
         base_data_path = match
 
     started = time.time() - 2.0
+    if not use_ui_automation:
+        base = base_data_path or pre.get("assetContentDir") or pre["contentDirectories"][0]
+        payload: dict[str, Any] = {
+            "nodeLabel": node_label,
+            "morphNames": [m["name"] for m in pre["morphs"]],
+            "baseDataPath": base,
+            "vendorName": vendor_name,
+            "productName": product_name,
+        }
+        if compress_output is not None:
+            payload["compressOutput"] = compress_output
+        if force_unique_ids is not None:
+            payload["forceUniqueIds"] = force_unique_ids
+        await _execute_by_id("vangard-save-modifier-asset", payload)
+        files: dict[str, str] | None = None
+        if Path(base).is_dir():
+            files = _find_saved_modifier_files(base, vendor_name, product_name, pre["morphs"], started)
+            missing_files = [m["name"] for m in pre["morphs"] if m["name"] not in files]
+            if missing_files:
+                raise ToolError(
+                    f"doSave succeeded, but no new .dsf found for {missing_files} under "
+                    f"{base}/data/*/*/*/Morphs/{vendor_name}/{product_name}/ — DAZ Studio "
+                    "skips morphs from cloud-encrypted files"
+                )
+        return {
+            "success": True,
+            "node": pre["node"],
+            "baseDataPath": base,
+            "vendorName": vendor_name,
+            "productName": product_name,
+            "morphs": [m["name"] for m in pre["morphs"]],
+            "files": files,
+        }
+
     submitted = await _execute_by_id_async(
         "vangard-trigger-modifier-asset-save", {"nodeLabel": node_label}
     )

@@ -6,6 +6,51 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.10 — 2026-10-10
+
+### Added
+
+- **`daz_render_asset_thumbnail(node_labels, duf_path)`** — renders the
+  Content-Library thumbnails `<name>.duf.png` (91×91) and `<name>.tip.png`
+  (256×256), RGBA with transparent background, for any saved asset. Uses a
+  regular render-to-file with the *Viewport* engine (no Iray, ~1 s): hides
+  everything but the given nodes and their children, aims a temporary camera
+  at their combined bounding box, renders both sizes, then restores
+  visibility, render options, viewport camera and selection in a `finally`
+  block. `Dz3DViewport.captureImage()` (null image) and `renderThumbnail()`
+  (returns false) don't work on the Filament viewport. New registry script
+  `vangard-render-asset-thumbnail`. `daz_save_wearable_preset` calls it by
+  default (`thumbnail=True`), so the headless path is on par with the old
+  dialog path again; a failed render is reported as `thumbnailError` and
+  does not fail the save.
+
+### Changed
+
+- **`daz_save_wearable_preset` now saves headless via
+  `DzWearablesAssetFilter.doSave()`** and takes `items=[...]` to pick exactly
+  which fitted nodes go into the preset (plus `smart_parent`, `pose_target`,
+  `compress_output`, `save_simulation_data`). Closes the remaining gap of
+  Bug-Katalog #22 Teil 2: the long-standing `errCode 98` was a wrong
+  `NodeNames` layout — the filter reads each entry's *value* as a node label
+  (key ignored), and `RunSilent` is a Bool, not the `"yes"` string. Live-
+  verified 2026-10-10 (single item, multiple items, all fitted items). The
+  previous UI-Automation path stays available as `use_ui_automation=True`
+  (bundles every fitted item, writes a thumbnail). New registry script
+  `vangard-save-wearable-preset` in `_registry_fork.py`.
+- **`daz_save_modifier_asset` now saves headless via
+  `DzModifierSupportAssetFilter.doSave()`** — no dialog, no keyboard input,
+  no unlocked desktop, works with a remote DAZ Studio (closes Bug-Katalog #37
+  including its open "Accept stays greyed out" sub-issue). The old
+  "returns 0, writes nothing" was a wrong `NodeNames` layout: one
+  sub-settings entry keyed by the node's internal *name*, whose String
+  values are the morph names. The preflight now also rejects items not
+  backed by a saved `.dsf` asset up front (DAZ would otherwise pop a modal
+  "Resource Error" even with `RunSilent`), and `base_data_path` defaults to
+  the content directory holding the item's own asset. New options
+  `compress_output`, `force_unique_ids`; the dialog path stays available as
+  `use_ui_automation=True`. Live-verified 2026-10-10. New registry script
+  `vangard-save-modifier-asset`.
+
 ## 0.5.8+bb.9 — 2026-10-02
 
 ### Added

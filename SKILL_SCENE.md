@@ -26,14 +26,19 @@ Use these for 5-10x speedup when changing 3+ items:
   File > Save As > Support Asset > Prop Asset. `output_path` must resolve inside a
   configured content directory (see SKILL_DAZSCRIPT.md's "Content-Library asset export"
   section for the BaseDataPath/errCode 98 gotcha).
+- `daz_render_asset_thumbnail(node_labels, duf_path)` *(fork-only)*: Content-Library
+  thumbnails (`.duf.png` 91px, `.tip.png` 256px, transparent) for a saved asset — Viewport
+  engine render, scene restored afterwards. `daz_save_prop_asset` writes none; call this
+  after it. `daz_save_wearable_preset` does it automatically (`thumbnail=True`).
 - `daz_save_modifier_asset(node_label, morph_names, vendor_name, product_name,
   base_data_path=None)` *(fork-only)*: Save exactly the named morphs of a node as
   Modifier Assets (`data/<asset vendor>/<asset product>/<item>/Morphs/<vendor>/<product>/<morph>.dsf`)
-  so they load with the item in every scene — equivalent of File > Save As > Support
-  Asset > Modifier Asset(s). The node must itself be a saved Figure/Prop Asset
-  (from the library, or via `daz_save_prop_asset`). Drives the dialog via Windows UI
-  Automation **with keyboard input**: DAZ Studio comes to the foreground briefly, and
-  the desktop must be unlocked (refused up front otherwise).
+  so they load with the item in every scene — headless equivalent of File > Save As >
+  Support Asset > Modifier Asset(s) via `DzModifierSupportAssetFilter.doSave()`, no
+  dialogs. The node must itself be a saved Figure/Prop Asset (from the library, or via
+  `daz_save_prop_asset`) — checked up front. `base_data_path` defaults to the content
+  directory holding the item's own asset. `use_ui_automation=True` falls back to driving
+  the dialog (Windows-only, keyboard input, unlocked desktop).
 
 ## Materials
 - `daz_list_materials`, `daz_get_material`: Inspect surfaces on a node.
@@ -57,7 +62,7 @@ Use these for 5-10x speedup when changing 3+ items:
   Automation** (`pywinauto`, same dialog class/Accept control as `daz_create_geometry_shell`
   — Bug-Katalog #6/#31) instead of waiting on a human click — no polling loop needed, the
   tool returns the final result directly. Windows-only, same constraint as
-  `daz_create_geometry_shell` / `daz_save_wearable_preset` (MCP server must run on the same
+  `daz_create_geometry_shell` (MCP server must run on the same
   machine as DAZ Studio).
 - `daz_list_strand_hair_nodes`: Enumerate `DzStrandHairNode`s with target figure,
   `has_geometry`, and material zone labels. Hair color/shader/thickness go through the
@@ -72,7 +77,7 @@ Use these for 5-10x speedup when changing 3+ items:
   Triggers a "Create New Geometry Shell" confirmation dialog like Strand-Based Hair does,
   but **confirms it automatically via Windows UI Automation** (`pywinauto`) instead of
   waiting on a human click — no polling loop needed, the tool returns the final result
-  directly. Windows-only, same constraint as `daz_save_wearable_preset` (MCP server must
+  directly. Windows-only, same constraint as `daz_create_strand_hair` (MCP server must
   run on the same machine as DAZ Studio). See Bug-Katalog #31 and SKILL_DAZSCRIPT.md's
   "Do NOT use UI Actions/Menus" note for the underlying dialog-blocking behavior.
 - `daz_list_geometry_shells()`: Enumerate `DzGeometryShellNode`s with target node,
