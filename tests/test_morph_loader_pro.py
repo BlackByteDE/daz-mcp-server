@@ -262,7 +262,9 @@ class TestOptionalFieldsSent:
         assert args["attenuateEdgeStrength"] == 0.25
         assert args["attenuateMapPath"] == "C:/maps/weight.png"
 
-    async def test_reverse_deformations_options_sent(self, mock_daz):
+    async def test_reverse_deformations_options_sent(self, mock_daz, tmp_path):
+        pose = tmp_path / "tpose.duf"
+        pose.write_bytes(b"")
         captured = {}
         mock_daz.post("/scripts/vangard-load-morph-pro/execute").mock(
             side_effect=_capture(captured)
@@ -271,11 +273,36 @@ class TestOptionalFieldsSent:
             "Genesis 9",
             "C:/morphs/posed_export.obj",
             reverse_deformations=True,
-            reverse_deformations_pose_path="C:/poses/tpose.duf",
+            reverse_deformations_pose_path=str(pose),
         )
         args = captured["args"]
         assert args["reverseDeformations"] is True
-        assert args["reverseDeformationsPosePath"] == "C:/poses/tpose.duf"
+        assert args["reverseDeformationsPosePath"] == str(pose)
+
+    async def test_reverse_deformations_without_pose_path_omits_it(self, mock_daz):
+        """Bug-Katalog #41: no path -> current scene pose is used, nothing sent."""
+        captured = {}
+        mock_daz.post("/scripts/vangard-load-morph-pro/execute").mock(
+            side_effect=_capture(captured)
+        )
+        await daz_load_morph_pro(
+            "Genesis 9", "C:/morphs/posed_export.obj", reverse_deformations=True
+        )
+        args = captured["args"]
+        assert args["reverseDeformations"] is True
+        assert "reverseDeformationsPosePath" not in args
+
+    async def test_reverse_deformations_missing_pose_path_rejected(self, mock_daz):
+        """A missing pose file would pop blocking modal dialogs in DAZ Studio."""
+        route = mock_daz.post("/scripts/vangard-load-morph-pro/execute")
+        with pytest.raises(ToolError, match="not found"):
+            await daz_load_morph_pro(
+                "Genesis 9",
+                "C:/morphs/posed_export.obj",
+                reverse_deformations=True,
+                reverse_deformations_pose_path="C:/does/not/exist.duf",
+            )
+        assert not route.called
 
 
 class TestControlProperty:

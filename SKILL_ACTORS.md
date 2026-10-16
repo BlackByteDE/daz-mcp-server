@@ -3,7 +3,8 @@ Tools for morphs, emotions, and movement.
 
 ## Morph Discovery
 - `daz_list_morphs`: Use `include_zero=False` to see active morphs.
-- `daz_search_morphs`: Pattern match (e.g., "smile", "muscle").
+- `daz_search_morphs`: Pattern match (e.g., "smile", "muscle"). Includes morphs at 0 by
+  default (`include_zero=True`); pass `include_zero=False` to see only active ones.
 - `daz_set_morph`: Set a single morph by name and value.
 - `daz_load_morph_pro`: Import a new OBJ morph target via Morph Loader Pro (load mode,
   mirroring, overwrite mode, reverse deformations, subdivision, attenuation maps, ERC

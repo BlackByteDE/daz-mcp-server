@@ -8328,15 +8328,18 @@ _LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     if (args.propertyGroupPath) loader.setPropertyGroupPath(String(args.propertyGroupPath));
     if (args.hideSecondaryProperties !== undefined) loader.setHideSecondaryProperties(!!args.hideSecondaryProperties);
 
-    // Attention (SDK docs): applyReverseDeformationsPose() must run before createMorph().
+    // applyReverseDeformationsPose() must run before createMorph(). It returns a DzError
+    // CODE (0 = success), not a bool — the plugin's own UI only proceeds on 0. Treating it
+    // as a bool made every successful call look like a failure (Bug-Katalog #41).
     if (args.reverseDeformations) {
         loader.setReverseDeformations(true);
         if (args.reverseDeformationsPosePath) {
             loader.setReverseDeformationsPose(String(args.reverseDeformationsPosePath));
         }
-        var okPose = loader.applyReverseDeformationsPose();
-        if (!okPose) {
-            throw new Error("applyReverseDeformationsPose() failed — check reverseDeformationsPosePath");
+        var poseErr = loader.applyReverseDeformationsPose();
+        if (poseErr && poseErr.valueOf() !== 0) {
+            throw new Error("applyReverseDeformationsPose() failed (error code " +
+                poseErr.valueOf() + ") — check reverseDeformationsPosePath");
         }
     }
 

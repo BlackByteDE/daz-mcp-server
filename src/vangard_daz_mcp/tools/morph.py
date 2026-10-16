@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from fastmcp.exceptions import ToolError
@@ -32,7 +33,9 @@ async def daz_list_morphs(
         node_label: Display label or internal name of the node (e.g., "Genesis 9").
         include_zero: If True, return all morphs including those set to 0.
                       If False (default), only return morphs with non-zero values
-                      (currently active morphs).
+                      (currently active morphs). Morphs at 0 are hidden by default,
+                      so pass True (or use ``daz_search_morphs``) to find a morph
+                      by name that is not currently dialed in.
 
     Returns:
       - morphs: List of morph objects with:
@@ -103,7 +106,7 @@ async def daz_list_morphs(
 async def daz_search_morphs(
     node_label: str,
     pattern: str,
-    include_zero: bool = False,
+    include_zero: bool = True,
 ) -> dict[str, Any]:
     """Search for morphs matching a name pattern.
 
@@ -111,12 +114,15 @@ async def daz_search_morphs(
     a substring pattern. Useful for finding specific morphs like all facial
     expressions, body morphs, or morphs for a specific body part.
 
+    Unlike ``daz_list_morphs``, this includes morphs currently at 0 by default:
+    a search is for finding a morph by name, not for seeing what is active.
+
     Args:
         node_label: Display label or internal name of the node (e.g., "Genesis 9").
         pattern: Substring to search for in morph label or name (case-insensitive).
                  Examples: "smile", "head", "muscle", "express"
-        include_zero: If True, return all matching morphs including zero values.
-                      If False (default), only return matching morphs that are active.
+        include_zero: If True (default), return all matching morphs including zero
+                      values. If False, only return matching morphs that are active.
 
     Returns:
       - morphs: List of matching morph objects with:
@@ -573,10 +579,14 @@ async def daz_load_morph_pro(
         reverse_deformations: If True, "reverses" a posed base mesh before
             diffing so the morph is captured in rest pose. Requires the base
             OBJ to have been exported while posed.
-        reverse_deformations_pose_path: Path to the pose file describing the
-            pose the OBJ was exported in. Required (and applied before the
-            morph is created) when ``reverse_deformations`` is True and the
-            current scene pose is not already that pose.
+        reverse_deformations_pose_path: Absolute filesystem path to an existing
+            pose ``.duf`` describing the pose the OBJ was exported in (applied
+            before the morph is created). Optional: if omitted, the current
+            scene pose is used as-is, so pose the figure to match the OBJ
+            first. Must be a real file path, not a content-relative one
+            (``/Presets/...``): DAZ opens it as a plain path and a missing
+            file pops blocking modal dialogs, so existence is checked up
+            front. The pose is applied to the scene and stays applied.
         subdivision: Enable SubD-aware morph creation.
         subdivision_mapping: One of ``Catmark`` (default), ``FacetOrder``,
             ``ZBrushCage``, ``MudboxCage``. Only relevant if ``subdivision``.
@@ -659,6 +669,14 @@ async def daz_load_morph_pro(
     if delta_tolerance is not None:
         payload["deltaTolerance"] = delta_tolerance
     if reverse_deformations_pose_path is not None:
+        # DAZ opens this as a plain filesystem path; a missing file raises two
+        # blocking modal dialogs ("Error Opening File" + "Continue loading this
+        # morph?") that nothing here can dismiss (Bug-Katalog #41).
+        if not os.path.isfile(reverse_deformations_pose_path):
+            raise ToolError(
+                f"reverse_deformations_pose_path not found: {reverse_deformations_pose_path!r}. "
+                "Pass an existing absolute file path, or omit it to use the current scene pose."
+            )
         payload["reverseDeformationsPosePath"] = reverse_deformations_pose_path
     if subdivision is not None:
         payload["subdivision"] = subdivision
