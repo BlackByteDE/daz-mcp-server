@@ -37,9 +37,9 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.11
+- **Version:** 0.5.8+bb.12
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 163 tools registered across 15 tool modules.
+- **Registry:** 165 tools registered across 15 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
@@ -108,6 +108,9 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **Phase 6.23:** Missing-Files-Dialoge *(fork-only)* — `daz_load_file` (Default) und
   `daz_apply_material_preset(allow_missing=True)` klicken "Missing Files"/"Missing File"
   per UI Automation weg (`_ui_automation.drive_missing_files_dialogs`) — Bug-Katalog #6
+- **Phase 6.24:** Rigidity Weight Map *(fork-only)* — `daz_get_rigidity_weights`,
+  `daz_set_rigidity_weights` (`DzShape.getRigidityMap()`; Map der Rigidity Groups, nicht
+  dForce — Bug-Katalog #18 Teil 2)
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

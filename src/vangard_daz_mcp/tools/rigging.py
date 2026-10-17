@@ -146,3 +146,82 @@ async def daz_set_skin_weights(
         "figureLabel": figure_label,
         "boneWeights": bone_weights,
     })
+
+
+@mcp.tool()
+async def daz_get_rigidity_weights(
+    node_label: str,
+    include_weights: bool = False,
+) -> dict[str, Any]:
+    """Read the rigidity weight map of a figure or prop.
+
+    This is the map the Node Weight Map Brush lists as "Rigid": per-vertex
+    weights (0-1) used by the node's rigidity groups to keep parts of a mesh
+    (buttons, buckles, badges) from stretching when the item is morphed or
+    fitted. It is saved with the geometry in the ``.duf`` (DSON ``rigidity``).
+    Not a dForce map — dForce pinning is ``daz_set_dforce_influence_weights``.
+
+    Args:
+        node_label: Display label, internal name, elementID, or
+            ``Parent/Label`` path of the figure or prop.
+        include_weights: If True, also return every non-zero weight as a
+            sparse ``{"<vertex_index>": weight}`` dict.
+
+    Returns:
+        Dict with node, has_map, num_vertices and — when a map exists —
+        num_weights, non_zero, min_non_zero, max (and weights if requested).
+
+    Examples:
+        daz_get_rigidity_weights("Genesis 8 Female")
+        # → {"has_map": True, "num_vertices": 16556, "non_zero": 481, ...}
+    """
+    return await _execute_by_id("vangard-get-rigidity-weights", {
+        "nodeLabel": node_label,
+        "includeWeights": include_weights,
+    })
+
+
+@mcp.tool()
+async def daz_set_rigidity_weights(
+    node_label: str,
+    weights: dict[str, float] | list[float] | None = None,
+    face_groups: dict[str, float] | None = None,
+    material_groups: dict[str, float] | None = None,
+    clear: bool = False,
+) -> dict[str, Any]:
+    """Write rigidity weights (the Node Weight Map Brush "Rigid" map).
+
+    Creates the rigidity map if the node has none yet, then writes the given
+    weights. Values are clamped to 0-1 and stored slightly quantized (0.75
+    reads back as 0.749996). The map is saved with the scene/asset.
+
+    Args:
+        node_label: Display label, internal name, elementID, or
+            ``Parent/Label`` path of the figure or prop.
+        weights: Per-vertex weights — a sparse ``{"<vertex_index>": weight}``
+            dict or a dense list with one value per BASE (un-subdivided)
+            vertex.
+        face_groups: ``{face_group_name: weight}`` — sets every vertex of the
+            group's polygons to that weight.
+        material_groups: ``{surface_name: weight}`` — same for surfaces.
+        clear: If True, set every weight to 0 before writing.
+
+    Returns:
+        Dict with node, created (map was new), written (vertex writes),
+        groups ({group, kind, vertices, weight}), errors (skipped entries),
+        and the resulting num_weights / non_zero / min_non_zero / max.
+
+    Examples:
+        daz_set_rigidity_weights("Jacket", material_groups={"Buttons": 1.0})
+        daz_set_rigidity_weights("Jacket", weights={"120": 1.0, "121": 0.5})
+        daz_set_rigidity_weights("Jacket", clear=True)
+    """
+    if weights is None and not face_groups and not material_groups and not clear:
+        raise ToolError("Pass weights, face_groups, material_groups, or clear=True.")
+    return await _execute_by_id("vangard-set-rigidity-weights", {
+        "nodeLabel": node_label,
+        "weights": weights,
+        "faceGroups": face_groups or {},
+        "materialGroups": material_groups or {},
+        "clear": clear,
+    })

@@ -6,6 +6,23 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.12 — 2026-10-18
+
+### Added
+
+- **`daz_get_rigidity_weights(node_label, include_weights=False)` /
+  `daz_set_rigidity_weights(node_label, weights, face_groups,
+  material_groups, clear)`** (`tools/rigging.py`) — read and write the
+  rigidity weight map (Node Weight Map Brush "Rigid"), per vertex (sparse or
+  dense) or per face/material group; the map is created if missing. Closes
+  Bug-Katalog #18 Teil 2: the map is `DzShape.getRigidityMap()`, a fully
+  scriptable `DzWeightMap` — `DzRigidMapContext.getWeightMap()` only hands
+  DazScript an opaque `DzTSharedPointer`. Saved with the geometry (DSON
+  `rigidity`), live-verified across a save/reload on G8F and on a prop. It
+  belongs to the rigidity groups, not to dForce (pinning stays
+  `daz_set_dforce_influence_weights`). New registry scripts
+  `vangard-get-rigidity-weights`, `vangard-set-rigidity-weights`.
+
 ## 0.5.8+bb.11 — 2026-10-17
 
 ### Added

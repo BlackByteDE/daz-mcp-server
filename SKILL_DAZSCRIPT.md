@@ -420,6 +420,24 @@ dismissed within ~0.3 s DAZ carries on, left open it crashes.
 later). `daz_load_file` and `daz_apply_material_preset(allow_missing=True)` run
 `_ui_automation.drive_missing_files_dialogs` next to the load.
 
+### Rigidity weight map ("Rigid") — confirmed live (Bug-Katalog #18 Teil 2)
+
+```javascript
+var shape = node.getObject().getCurrentShape();
+var map = shape.getRigidityMap();          // DzWeightMap or null; BASE vertex count
+map.getFloatWeight(i); map.setFloatWeight(i, 0.75);   // reads back 0.749996 (quantized)
+// create one (figure or prop):
+var m = new DzWeightMap(); m.setNumWeights(shape.getGeometry().getNumVertices());
+shape.setRigidityMap(m);                    // the weight group then lists a DzRigidMapContext
+// BROKEN: weightGroup.getWeightMapContext(i).getWeightMap() -> DzTSharedPointer<DzWeightMap>,
+//         opaque in DazScript (only className/inherits). Same for getChildWeights(),
+//         getWeightMapForBinding(binding, bool).
+// BROKEN: new DzWeightMap(n, name) -> 0 weights; always call setNumWeights(n).
+```
+
+Saved with the geometry (DSON `rigidity`). Used by the rigidity groups, not by dForce
+(dForce pinning = `DzDForceModifier.setInfluenceWeights()`).
+
 ### Runtime bone rigging (`new DzBone` + `DzSkinBinding`) — confirmed live (Bug-Katalog #30)
 
 Adding a child bone to an existing figure at runtime (`new DzBone()` +

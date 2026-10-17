@@ -39,6 +39,12 @@ Tools for morphs, emotions, and movement.
 - `daz_set_skin_weights(figure_label, bone_weights)`: Write per-vertex general
   skin weights (dense array or sparse `{index: weight}`) for one or more bones
   and re-normalize the skin binding.
+- `daz_get_rigidity_weights(node_label)` / `daz_set_rigidity_weights(node_label,
+  weights=None, face_groups=None, material_groups=None, clear=False)`: The rigidity
+  weight map (Node Weight Map Brush "Rigid") that rigidity groups use to keep parts
+  (buttons, buckles) from stretching under morphs/fitting. Created if missing, saved
+  with the asset. Not a dForce map — for dForce pinning use
+  `daz_set_dforce_influence_weights`.
 - Use for hair-tail/ponytail jiggle rigs or any other runtime bone chain on a
   fitted prop-turned-figure (see `daz_run_transfer_utility` to first convert a
   plain prop into a `DzFigure` with a real skin binding). Both tools call

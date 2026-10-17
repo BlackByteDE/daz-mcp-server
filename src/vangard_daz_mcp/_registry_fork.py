@@ -835,6 +835,130 @@ _SET_HIDDEN_FACETS_SCRIPT = """\
 })()
 """
 
+# Rigidity weight map (Bug-Katalog #18 Teil 2). Confirmed live 2026-10-17:
+# the map behind the Node Weight Map Brush's "Rigid" entry is
+# DzShape.getRigidityMap() -- a plain, fully scriptable DzWeightMap
+# (get/setFloatWeight, sized to the BASE vertex count) that DazScript can't
+# reach through DzRigidMapContext.getWeightMap() (returns an opaque
+# DzTSharedPointer). It is saved with the geometry (DSON "rigidity") and
+# survives a scene reload. It belongs to the rigidity groups (parts that must
+# keep their shape under morphs/fitting), not to dForce -- dForce pinning is
+# InfluenceWeights. Creating it: new DzWeightMap() + setNumWeights(n) +
+# shape.setRigidityMap(map); the figure's weight group then lists a
+# DzRigidMapContext like after createWeightMap("Rigid"). Values are stored
+# quantized (0.75 reads back as 0.749996).
+_RIGIDITY_COMMON = """\
+    function rigidityTarget(label) {
+        var n = resolveNode(label);
+        var obj = n.getObject ? n.getObject() : null;
+        var shape = obj ? obj.getCurrentShape() : null;
+        var mesh = shape ? shape.getGeometry() : null;
+        if (!mesh) throw new Error("Node '" + label + "' has no geometry (" + n.className() + ")");
+        return {node: n, shape: shape, mesh: mesh, numVerts: mesh.getNumVertices()};
+    }
+    function groupVertices(mesh, kind, name) {
+        var g = kind === "face" ? mesh.findFaceGroup(name) : mesh.findMaterialGroup(name);
+        if (!g) return null;
+        var seen = {};
+        var verts = [];
+        for (var k = 0; k < g.count(); k++) {
+            var f = mesh.getFacet(g.getIndex(k));
+            var ids = [f.vertIdx1, f.vertIdx2, f.vertIdx3, f.vertIdx4];
+            for (var j = 0; j < 4; j++) {
+                var v = ids[j];
+                if (v >= 0 && !seen[v]) { seen[v] = true; verts.push(v); }
+            }
+        }
+        return verts;
+    }
+    function stats(map, numVerts, includeWeights) {
+        var nonZero = 0, minW = null, maxW = null, sparse = {};
+        for (var i = 0; i < map.getNumWeights(); i++) {
+            var w = map.getFloatWeight(i);
+            if (w === 0) continue;
+            nonZero++;
+            if (minW === null || w < minW) minW = w;
+            if (maxW === null || w > maxW) maxW = w;
+            if (includeWeights) sparse[String(i)] = Math.round(w * 10000) / 10000;
+        }
+        var out = {num_weights: map.getNumWeights(), num_vertices: numVerts,
+                   non_zero: nonZero, min_non_zero: minW, max: maxW};
+        if (includeWeights) out.weights = sparse;
+        return out;
+    }
+"""
+
+_GET_RIGIDITY_WEIGHTS_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + _RIGIDITY_COMMON + """
+    var args = getArguments()[0] || {};
+    var t = rigidityTarget(args.nodeLabel);
+    var map = t.shape.getRigidityMap();
+    var out = {node: t.node.getLabel(), has_map: !!map, num_vertices: t.numVerts};
+    if (!map) return out;
+    var st = stats(map, t.numVerts, args.includeWeights === true);
+    for (var k in st) if (st.hasOwnProperty(k)) out[k] = st[k];
+    return out;
+})()
+"""
+
+_SET_RIGIDITY_WEIGHTS_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + _RIGIDITY_COMMON + """
+    var args = getArguments()[0] || {};
+    var t = rigidityTarget(args.nodeLabel);
+    var map = t.shape.getRigidityMap();
+    var created = false;
+    if (!map) {
+        map = new DzWeightMap();
+        map.setNumWeights(t.numVerts);
+        map.setName("RigidityMap");
+        t.shape.setRigidityMap(map);
+        map = t.shape.getRigidityMap();
+        created = true;
+    }
+    if (map.getNumWeights() !== t.numVerts) map.setNumWeights(t.numVerts);
+
+    var errors = [];
+    var written = 0;
+    function put(i, w) {
+        if (isNaN(i) || i < 0 || i >= t.numVerts) { errors.push("vertex index out of range: " + i); return; }
+        w = parseFloat(w);
+        if (isNaN(w)) { errors.push("not a number for vertex " + i); return; }
+        map.setFloatWeight(i, Math.max(0, Math.min(1, w)));
+        written++;
+    }
+
+    if (args.clear) {
+        for (var c = 0; c < t.numVerts; c++) map.setFloatWeight(c, 0);
+    }
+    var spec = args.weights;
+    if (spec && typeof spec.length === "number") {
+        if (spec.length !== t.numVerts) {
+            errors.push("dense array length " + spec.length + " != vertex count " + t.numVerts);
+        } else {
+            for (var d = 0; d < spec.length; d++) put(d, spec[d]);
+        }
+    } else if (spec) {
+        for (var key in spec) if (spec.hasOwnProperty(key)) put(parseInt(key, 10), spec[key]);
+    }
+    var groups = [["face", args.faceGroups || {}], ["material", args.materialGroups || {}]];
+    var applied = [];
+    for (var gi = 0; gi < groups.length; gi++) {
+        var kind = groups[gi][0], gmap = groups[gi][1];
+        for (var name in gmap) {
+            if (!gmap.hasOwnProperty(name)) continue;
+            var verts = groupVertices(t.mesh, kind, name);
+            if (!verts) { errors.push(kind + " group not found: " + name); continue; }
+            for (var vi = 0; vi < verts.length; vi++) put(verts[vi], gmap[name]);
+            applied.push({group: name, kind: kind, vertices: verts.length, weight: gmap[name]});
+        }
+    }
+
+    var out = {node: t.node.getLabel(), created: created, written: written,
+               groups: applied, errors: errors};
+    var st = stats(map, t.numVerts, false);
+    for (var k in st) if (st.hasOwnProperty(k)) out[k] = st[k];
+    return out;
+})()
+"""
+
 # Registry entries: script_id → (description, script_text)
 # Merged into _REGISTRY by _register_scripts() in _registry.py.
 _REGISTRY_FORK: dict[str, tuple[str, str]] = {
@@ -913,5 +1037,15 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Geometry Editor does, and rebuild the cached mesh so viewport and "
         "exporters see it (Bug-Katalog #35)",
         _SET_HIDDEN_FACETS_SCRIPT,
+    ),
+    "vangard-get-rigidity-weights": (
+        "Read the rigidity weight map (Node Weight Map Brush \"Rigid\") of a "
+        "figure or prop via DzShape.getRigidityMap() (Bug-Katalog #18 Teil 2)",
+        _GET_RIGIDITY_WEIGHTS_SCRIPT,
+    ),
+    "vangard-set-rigidity-weights": (
+        "Write rigidity weights per vertex or per face/material group, creating "
+        "the rigidity map if missing (Bug-Katalog #18 Teil 2)",
+        _SET_RIGIDITY_WEIGHTS_SCRIPT,
     ),
 }
