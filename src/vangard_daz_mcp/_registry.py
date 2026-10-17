@@ -7955,6 +7955,10 @@ _EXPORT_SCENE_SCRIPT = """\
     settings.setBoolValue("IncludeAnimations", applyCurrentPose);
     settings.setBoolValue("IncludeFigures", true);
     settings.setBoolValue("IncludeProps", true);
+    // OBJ exporter only (Bug-Katalog #39): "IgnoreInvisible" defaults to true and drives
+    // BOTH skipping invisible nodes AND DzFacetMesh::removeHiddenFacets() on every mesh,
+    // so faces hidden in the Geometry Editor silently vanish from the file.
+    if (args.includeHidden === true) settings.setBoolValue("IgnoreInvisible", false);
 
     var err = exporter.writeFile(outputPath, settings);
     var errCode = (err && typeof err.valueOf === "function") ? err.valueOf() : err;

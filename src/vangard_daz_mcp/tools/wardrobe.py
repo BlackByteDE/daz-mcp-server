@@ -627,6 +627,7 @@ async def daz_export_obj(
     node_labels: list[str] | None = None,
     apply_current_pose: bool = True,
     scale_factor: float = 1.0,
+    include_hidden: bool = False,
 ) -> dict[str, Any]:
     """Export scene nodes to a Wavefront OBJ file via DAZ Studio's OBJ exporter.
 
@@ -646,6 +647,13 @@ async def daz_export_obj(
         apply_current_pose: Whether to export the geometry in the current
             frame's posed state (default True).
         scale_factor: Uniform scale applied to exported geometry (default 1.0).
+        include_hidden: If False (default, the exporter's own default), faces hidden
+            in the Geometry Editor are silently dropped from the file and invisible
+            nodes are skipped — both are controlled by the exporter's single
+            ``IgnoreInvisible`` option (confirmed in the plugin, Bug-Katalog #39),
+            so a figure with hidden body parts (e.g. thighs hidden under clothing)
+            comes out with those faces missing. Pass True to export the complete
+            geometry; note this also exports invisible nodes.
 
     Returns:
         Dict with keys:
@@ -675,5 +683,6 @@ async def daz_export_obj(
             "includeMorphs": False,
             "applyCurrentPose": apply_current_pose,
             "scaleFactor": scale_factor,
+            "includeHidden": include_hidden,
         },
     )
