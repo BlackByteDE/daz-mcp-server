@@ -7032,6 +7032,13 @@ _RUN_TRANSFER_UTILITY_SCRIPT = """\
     if (!target) target = Scene.findNode(targetLabel);
     if (!target) throw new Error("Target node not found: " + targetLabel);
 
+    // doTransfer() rebuilds the target (it becomes a DzFigure), which leaves the JS wrapper
+    // objects `source`/`target` stale — any method call on them afterwards throws
+    // "Property 'getLabel' ... is not a function" (Bug-Katalog #43). Read what the result
+    // needs BEFORE the transfer and re-resolve the target afterwards.
+    var sourceOut = source.getLabel();
+    var targetOut = target.getLabel();
+
     var tu = new DzTransferUtility();
     tu.setSilentImporters(true);
     tu.setSource(source);
@@ -7051,11 +7058,19 @@ _RUN_TRANSFER_UTILITY_SCRIPT = """\
             sourceLabel + "', target: '" + targetLabel + "')");
     }
 
-    return {
-        success: true,
-        source: source.getLabel(),
-        target: target.getLabel()
-    };
+    var result = { success: true, source: sourceOut, target: targetOut };
+    try {
+        var after = Scene.findNodeByLabel(targetOut);
+        if (after) {
+            result.target_class = after.className();
+            if (typeof after.getFollowTarget === "function" && after.getFollowTarget()) {
+                result.follow_target = after.getFollowTarget().getLabel();
+            }
+        }
+    } catch (e) {
+        // post-transfer state is informational only; the transfer itself succeeded
+    }
+    return result;
 })()
 """
 

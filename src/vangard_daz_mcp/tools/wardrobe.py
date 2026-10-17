@@ -138,6 +138,10 @@ async def daz_run_transfer_utility(
         - success: true on success
         - source: confirmed source node label
         - target: confirmed target node label
+        - target_class: class of the target after the transfer (a successful
+          rigging transfer turns it into a ``DzFigure``); omitted if it could
+          not be re-resolved
+        - follow_target: label of the figure the target now follows, if any
 
     Examples:
         daz_run_transfer_utility("Genesis 8 Female", "Custom Hair Prop")
