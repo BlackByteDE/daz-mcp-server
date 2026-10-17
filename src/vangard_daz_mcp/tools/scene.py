@@ -50,6 +50,7 @@ async def daz_scene_info() -> dict[str, Any]:
 async def daz_load_file(
     file_path: str,
     merge: bool = True,
+    dismiss_missing_files: bool = True,
 ) -> dict[str, Any]:
     """Load a DAZ Studio file into the current scene.
 
@@ -60,10 +61,19 @@ async def daz_load_file(
                If False, replace the current scene entirely.
                Ignored for ``.obj`` — OBJ import always merges via the silent
                importer at scale 1 (1 unit = 1 cm).
+        dismiss_missing_files: If True (default), DAZ Studio's Missing Files /
+               Missing File prompts (textures or assets the file references
+               but that are not installed) are dismissed automatically via
+               Windows UI Automation — left open they block the call and can
+               crash DAZ Studio (Bug-Katalog #6). Missing files are skipped.
+               Silently inactive when UI Automation is unavailable (non-Windows,
+               DAZ on another machine, locked desktop).
 
     Returns:
       - success: true on success
       - file: the path that was loaded
+      - missing_files / dialogs_dismissed: only present when prompts were
+        dismissed — the files DAZ reported missing
 
     Do not pass ``.bvh`` files. The native BVH importer always opens a modal
     Studio dialog (Bug 11); this call blocks until a human clicks it, and
@@ -83,16 +93,24 @@ async def daz_load_file(
             "vangard-import-obj",
             {"filePath": file_path, "scaleFactor": 1.0},
         )
-    if merge:
-        try:
-            await run_dazpy(lambda: get_scene().load(file_path))
-            return {"success": True, "file": file_path}
-        except ToolError:
-            raise
-        except Exception as e:
-            handle_dazpy_error(e)
-    # merge=False: replace mode — fall back to the registered DazScript
-    return await _execute_by_id("vangard-load-file", {"filePath": file_path, "merge": False})
+    async def _load() -> dict[str, Any]:
+        if merge:
+            try:
+                await run_dazpy(lambda: get_scene().load(file_path))
+                return {"success": True, "file": file_path}
+            except ToolError:
+                raise
+            except Exception as e:
+                handle_dazpy_error(e)
+        # merge=False: replace mode — fall back to the registered DazScript
+        return await _execute_by_id("vangard-load-file", {"filePath": file_path, "merge": False})
+
+    if not dismiss_missing_files:
+        return await _load()
+    result, dialogs = await _ui_automation.run_with_missing_files_driver(_load())
+    if dialogs and dialogs["dialogs_dismissed"]:
+        result = {**result, **dialogs}
+    return result
 
 
 @mcp.tool()
@@ -560,27 +578,18 @@ async def daz_list_geometry_shells() -> dict[str, Any]:
 async def daz_get_shell_visibility(shell_label: str) -> dict[str, Any]:
     """List per-face-group visibility toggles on a Geometry Shell node.
 
-    ⚠️ This does NOT read Geometry-Editor "hide face group" state on a
-    regular mesh/prop — no DazScript API exposes that (Bug-Katalog #35). It
-    only reads a Geometry Shell node's own face-group visibility toggles.
-    If the node you care about isn't already a shell, create one over it
-    first with daz_create_geometry_shell(target_node_label), then call this
-    on the shell.
+    ⚠️ This only reads a Geometry Shell node's own face-group visibility
+    toggles. For polygons hidden with the Geometry Editor on a regular
+    mesh/prop use daz_get_hidden_facets instead (Bug-Katalog #35).
 
     Geometry Shell nodes (see daz_create_geometry_shell) expose one real,
     scriptable ``DzBoolProperty`` per face group of the shelled geometry,
     named ``facet_group_<name>_vis`` and grouped under "/Shell/Visibility/
-    Face Groups" in the Parameters pane. This is the *only* place in DAZ
-    Studio's scripting API where a face-group hide/show state is exposed as
-    a queryable property — a plain mesh/prop hidden via the Geometry Editor
-    has no equivalent at all (Bug-Katalog #35: ``DzFacetMesh``/``DzFacet``/
-    ``DzFacetShape`` expose no hidden-state accessor, confirmed live).
+    Face Groups" in the Parameters pane.
 
-    Use this as a scriptable substitute for Geometry-Editor hiding: create a
-    Geometry Shell over the item whose parts you'd otherwise hide, then
-    toggle its face groups instead of the original mesh's — that state
-    round-trips through daz_get_shell_visibility / daz_set_shell_visibility
-    and persists in the saved .duf.
+    Unlike Geometry-Editor hiding (daz_set_hidden_facets), which is lost when
+    the scene is reloaded, this state persists in the saved .duf — so a
+    Geometry Shell over an item is the way to make a partial hide permanent.
 
     Args:
         shell_label: Display label or internal name of a DzGeometryShellNode
@@ -606,12 +615,9 @@ async def daz_set_shell_visibility(
 ) -> dict[str, Any]:
     """Set per-face-group visibility toggles on a Geometry Shell node.
 
-    ⚠️ This does NOT set Geometry-Editor "hide face group" state on a
-    regular mesh/prop — no DazScript API exposes that (Bug-Katalog #35). It
-    only writes a Geometry Shell node's own face-group visibility toggles.
-    If the node you care about isn't already a shell, create one over it
-    first with daz_create_geometry_shell(target_node_label), then call this
-    on the shell.
+    ⚠️ This only writes a Geometry Shell node's own face-group visibility
+    toggles. To hide polygons of a regular mesh/prop like the Geometry
+    Editor does, use daz_set_hidden_facets instead (Bug-Katalog #35).
 
     See daz_get_shell_visibility for background — this is the write side of
     the same ``facet_group_<name>_vis`` properties.
@@ -634,4 +640,101 @@ async def daz_set_shell_visibility(
     return await _execute_by_id("vangard-set-shell-visibility", {
         "shellLabel": shell_label,
         "groupVisibility": group_visibility,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Geometry-Editor hidden polygons on a plain mesh (Bug-Katalog #35)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def daz_get_hidden_facets(
+    node_label: str,
+    only_hidden: bool = True,
+) -> dict[str, Any]:
+    """Report which polygons of a mesh are hidden (Geometry Editor hide state).
+
+    Reads the hidden flag of every polygon on the node's base mesh and sums
+    it up per face group and per material group (surface). Useful before an
+    export — ``daz_export_obj`` drops hidden polygons unless
+    ``include_hidden=True`` (Bug-Katalog #39) — or to find out what was
+    hidden on an item before it is fitted or rendered.
+
+    Args:
+        node_label: Display label or internal name of a figure or prop.
+        only_hidden: If True (default), list only groups with at least one
+            hidden polygon; False lists every group.
+
+    Returns:
+        Dict with:
+        - node: display label
+        - total_facets / hidden_facets: polygon counts on the base mesh
+        - face_groups: list of {name, facets, hidden}
+        - material_groups: list of {name, facets, hidden}
+
+    Examples:
+        daz_get_hidden_facets("Genesis 8 Female")
+        # → {"hidden_facets": 966, "face_groups": [{"name": "lThigh",
+        #     "facets": 483, "hidden": 483}, ...], ...}
+
+    Notes:
+        Geometry-Editor hiding is session-only: DAZ Studio does not save it in
+        the .duf, so after a scene reload this reports 0. For a hide that
+        persists, use a Geometry Shell (daz_create_geometry_shell +
+        daz_set_shell_visibility).
+    """
+    return await _execute_by_id("vangard-get-hidden-facets", {
+        "nodeLabel": node_label,
+        "onlyHidden": only_hidden,
+    })
+
+
+@mcp.tool()
+async def daz_set_hidden_facets(
+    node_label: str,
+    face_groups: list[str] | None = None,
+    material_groups: list[str] | None = None,
+    hidden: bool = True,
+    unhide_all: bool = False,
+) -> dict[str, Any]:
+    """Hide or unhide whole face groups / surfaces of a mesh like the Geometry Editor.
+
+    Headless equivalent of selecting polygon groups in the Geometry Editor and
+    choosing "Hide Selected Polygon(s)" (or showing them again). Afterwards the
+    cached mesh is rebuilt so the viewport, renders and exporters pick up the
+    change straight away — without that step DAZ Studio keeps showing (and
+    exporting) the old state.
+
+    Args:
+        node_label: Display label or internal name of a figure or prop.
+        face_groups: Face group names to change (e.g. ``["lThigh", "rThigh"]``;
+            see daz_get_hidden_facets(only_hidden=False) for the names).
+        material_groups: Material group (surface) names to change.
+        hidden: True (default) hides the listed groups, False shows them again.
+        unhide_all: If True, first show every polygon of the mesh; combine
+            with groups to hide exactly those.
+
+    Returns:
+        Dict with node, hidden, applied ({group, kind, facets} per group),
+        errors (group names not found), hidden_facets, total_facets, and
+        cache_refreshed.
+
+    Examples:
+        daz_set_hidden_facets("Genesis 8 Female", face_groups=["lThigh", "rThigh"])
+        daz_set_hidden_facets("Genesis 8 Female", face_groups=["lThigh"], hidden=False)
+        daz_set_hidden_facets("Genesis 8 Female", unhide_all=True)
+
+    Notes:
+        Not saved in the .duf (same as hiding in the Geometry Editor). For a
+        hide that persists, use a Geometry Shell instead.
+    """
+    if not face_groups and not material_groups and not unhide_all:
+        raise ToolError("Pass face_groups and/or material_groups, or unhide_all=True.")
+    return await _execute_by_id("vangard-set-hidden-facets", {
+        "nodeLabel": node_label,
+        "faceGroups": face_groups or [],
+        "materialGroups": material_groups or [],
+        "hidden": hidden,
+        "unhideAll": unhide_all,
     })

@@ -19,7 +19,10 @@ Use these for 5-10x speedup when changing 3+ items:
 ## Content Library
 - `daz_list_categories`, `daz_browse_category`: Navigating `.duf` files.
 - `daz_search_content`: Keyword search across the library.
-- `daz_load_file`, `daz_load_product`: Load by path or product name.
+- `daz_load_file`, `daz_load_product`: Load by path or product name. `daz_load_file`
+  dismisses DAZ's "Missing Files"/"Missing File" prompts automatically (Windows UI
+  Automation, missing files are skipped) and reports them as `missing_files` — an open
+  prompt would otherwise block the call and crash DAZ (Bug-Katalog #6).
 - `daz_check_compatibility`: Verify an asset works with a given figure.
 - `daz_save_prop_asset`: Save a node as a reusable Prop/Figure Support Asset (`.duf` +
   geometry) into a configured content directory — headless equivalent of
@@ -44,6 +47,8 @@ Use these for 5-10x speedup when changing 3+ items:
 - `daz_list_materials`, `daz_get_material`: Inspect surfaces on a node.
 - `daz_set_material_property`: Set a surface property (color, reflectivity, etc.).
 - `daz_apply_material_preset`, `daz_copy_material`: Apply presets or clone surfaces.
+  A preset with missing maps is refused unless `allow_missing=True`; then the Missing
+  Files prompts are dismissed automatically and the maps stay empty.
 - `daz_convert_to_iray_uber`: Fix content that lands as legacy `DzDefaultMaterial` instead of
   `DzUberIrayMaterial` (common after merging raw/hand-authored `.duf` content) — see
   SKILL_DAZSCRIPT.md's "Materials — DzDefaultMaterial vs DzUberIrayMaterial" for why this happens
@@ -70,6 +75,16 @@ Use these for 5-10x speedup when changing 3+ items:
   no dedicated hair-material tool exists or is needed. Guide density/scraggle styling is
   not scriptable at all (DAZ Studio Surfaces pane only).
 
+## Hidden Polygons (Geometry Editor) *(fork-only)*
+- `daz_get_hidden_facets(node_label, only_hidden=True)`: Which polygons of a mesh are
+  hidden, summed per face group and material group (surface).
+- `daz_set_hidden_facets(node_label, face_groups=None, material_groups=None,
+  hidden=True, unhide_all=False)`: Hide/show whole groups like the Geometry Editor's
+  "Hide Selected Polygon(s)"; the viewport and exporters see it immediately.
+- Session-only: DAZ does not save polygon hiding in the `.duf`. For a persistent
+  partial hide use a Geometry Shell (below). `daz_export_obj` drops hidden polygons
+  unless `include_hidden=True` (Bug-Katalog #39).
+
 ## Geometry Shell *(fork-only)*
 - `daz_create_geometry_shell(target_node_label, dialog_timeout=30.0)`: Creates a native
   Geometry Shell node on a target via `DzNewGeometryShellAction` — the only DazScript path
@@ -84,9 +99,6 @@ Use these for 5-10x speedup when changing 3+ items:
   `has_geometry`, and material zone labels (same shape as `daz_list_strand_hair_nodes`).
 - `daz_get_shell_visibility(shell_label)` / `daz_set_shell_visibility(shell_label,
   group_visibility)`: Read/write a Geometry Shell's per-face-group
-  `facet_group_<name>_vis` bool properties — the only place in DAZ Studio's scripting
-  API where a face group's hidden/shown state is a queryable property (workaround for
-  Bug-Katalog #35: no such accessor exists on a plain hidden mesh/prop). Practical use:
-  instead of hiding parts of a garment via the Geometry Editor (invisible to script,
-  Bug 35), put a Geometry Shell over it and hide the shell's face groups instead — that
-  state round-trips through these two tools and persists in the saved `.duf`.
+  `facet_group_<name>_vis` bool properties. Unlike Geometry-Editor hiding (`daz_set_hidden_facets`), this
+  state persists in the saved `.duf` — use a shell when a partial hide must survive a
+  reload.

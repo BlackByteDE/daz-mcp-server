@@ -6,7 +6,8 @@ Tools for morphs, emotions, and movement.
 - `daz_search_morphs`: Pattern match (e.g., "smile", "muscle"). Includes morphs at 0 by
   default (`include_zero=True`); pass `include_zero=False` to see only active ones.
 - `daz_set_morph`: Set a single morph by name and value.
-- `daz_load_morph_pro`: Import a new OBJ morph target via Morph Loader Pro (load mode,
+- `daz_load_morph_pro`: Import a new OBJ morph target via Morph Loader Pro (load mode —
+  default `Auto` picks the one DAZ accepts for figure/prop,
   mirroring, overwrite mode, reverse deformations, subdivision, attenuation maps, ERC
   control-property linking). See SKILL_DAZSCRIPT.md's "Morph Loader Pro" gotchas.
 

@@ -628,12 +628,9 @@ _LIST_GEOMETRY_SHELLS_SCRIPT = """\
 # face group, named facet_group_<name>_vis and grouped under
 # "/Shell/Visibility/Face Groups" in the Parameters pane. Confirmed live
 # (2026-09-20) both in a saved .duf (node_library studio_node_channels
-# extra) and via daz_execute against a freshly created shell. A plain
-# mesh/prop hidden via the Geometry Editor has no equivalent at all —
-# DzFacetMesh/DzFacet/DzFacetShape expose no hidden-state accessor
-# (see docs/daz-mcp-bridge-bugs.md #35). These two scripts do not fix that;
-# they let a *shell* placed over an item be hidden/shown per face group
-# instead, as a scriptable substitute.
+# extra) and via daz_execute against a freshly created shell. Unlike
+# Geometry-Editor hiding on a plain mesh (see the hidden-facets scripts
+# below, Bug-Katalog #35), the shell state persists in the .duf.
 _GET_SHELL_VISIBILITY_SCRIPT = """\
 (function(){
     var args = getArguments()[0] || {};
@@ -643,12 +640,9 @@ _GET_SHELL_VISIBILITY_SCRIPT = """\
     if (!n) throw new Error("Node not found: " + label);
     if (!n.inherits("DzGeometryShellNode")) {
         throw new Error("Node '" + label + "' is not a DzGeometryShellNode (found " +
-            n.className() + "). This does NOT read Geometry-Editor \\"hide face group\\" " +
-            "state on a regular mesh/prop -- no DazScript API exposes that at all " +
-            "(Bug-Katalog #35). It only works on a Geometry Shell node's OWN face-group " +
-            "visibility toggles. If you want a scriptable hide/show for this node, " +
-            "create a shell over it first with daz_create_geometry_shell(\\"" + label +
-            "\\"), then call this again with the shell's label.");
+            n.className() + "). It only works on a Geometry Shell node's OWN " +
+            "face-group visibility toggles. For Geometry-Editor hidden polygons on " +
+            "a regular mesh/prop use daz_get_hidden_facets instead (Bug-Katalog #35).");
     }
     var groups = [];
     for (var i = 0; i < n.getNumProperties(); i++) {
@@ -672,12 +666,9 @@ _SET_SHELL_VISIBILITY_SCRIPT = """\
     if (!n) throw new Error("Node not found: " + label);
     if (!n.inherits("DzGeometryShellNode")) {
         throw new Error("Node '" + label + "' is not a DzGeometryShellNode (found " +
-            n.className() + "). This does NOT set Geometry-Editor \\"hide face group\\" " +
-            "state on a regular mesh/prop -- no DazScript API exposes that at all " +
-            "(Bug-Katalog #35). It only works on a Geometry Shell node's OWN face-group " +
-            "visibility toggles. If you want a scriptable hide/show for this node, " +
-            "create a shell over it first with daz_create_geometry_shell(\\"" + label +
-            "\\"), then call this again with the shell's label.");
+            n.className() + "). It only works on a Geometry Shell node's OWN " +
+            "face-group visibility toggles. For Geometry-Editor hidden polygons on " +
+            "a regular mesh/prop use daz_set_hidden_facets instead (Bug-Katalog #35).");
     }
     var byId = {};
     var byLabel = {};
@@ -703,6 +694,144 @@ _SET_SHELL_VISIBILITY_SCRIPT = """\
         applied.push({ group: prop.getLabel(), name: prop.getName(), visible: !!settings[key] });
     }
     return { node: n.getLabel(), applied: applied, errors: errors };
+})()
+"""
+
+# Geometry-Editor hidden-polygon state on a plain mesh (Bug-Katalog #35).
+# Confirmed live (2026-10-17, G8F): the state IS scriptable -- on the BASE
+# DzFacetMesh (getCurrentShape().getGeometry()), not on getCachedGeom():
+#   read:   isFacetHidden(i), hasHiddenFacets()
+#   hide:   selectFacets(faceGroup, true) + hideSelectedFacets()
+#   unhide: showFacetsByIndexList(faceGroup, false)   (true = no-op)
+#   all:    hideAllFacets() + invertHiddenFacets() unhides everything
+# Plain JS arrays are rejected by every *ByIndexList method ("incompatible
+# arguments"); a DzFaceGroup/DzMaterialGroup from findFaceGroup()/
+# findMaterialGroup() is accepted. getCachedGeom() -- what the viewport and
+# the OBJ exporter's IgnoreInvisible filter see -- only picks the flags up
+# when the SubD cache is rebuilt; n.update(), forceCacheUpdate(),
+# invalidateFacetGroups() do not, toggling the shape's "lodlevel" does.
+# The hidden state is NOT saved in the .duf (gone after a reload).
+_HIDDEN_FACETS_COMMON = """\
+    function resolveMesh(label) {
+        var n = Scene.findNodeByLabel(label);
+        if (!n) n = Scene.findNode(label);
+        if (!n) throw new Error("Node not found: " + label);
+        var obj = n.getObject();
+        var shape = obj ? obj.getCurrentShape() : null;
+        var mesh = shape ? shape.getGeometry() : null;
+        if (!mesh || !mesh.inherits("DzFacetMesh")) {
+            throw new Error("Node '" + label + "' has no polygon mesh (" + n.className() + ")");
+        }
+        return {node: n, obj: obj, shape: shape, mesh: mesh};
+    }
+    function hiddenFlags(mesh) {
+        var flags = [];
+        var total = 0;
+        for (var i = 0; i < mesh.getNumFacets(); i++) {
+            var h = mesh.isFacetHidden(i);
+            flags.push(h);
+            if (h) total++;
+        }
+        return {flags: flags, total: total};
+    }
+    function groupStats(mesh, flags, kind, onlyHidden) {
+        var isFace = kind === "face";
+        var num = isFace ? mesh.getNumFaceGroups() : mesh.getNumMaterialGroups();
+        var out = [];
+        for (var gi = 0; gi < num; gi++) {
+            var g = isFace ? mesh.getFaceGroup(gi) : mesh.getMaterialGroup(gi);
+            var cnt = g.count();
+            var hid = 0;
+            for (var k = 0; k < cnt; k++) if (flags[g.getIndex(k)]) hid++;
+            if (onlyHidden && hid === 0) continue;
+            out.push({name: g.getName(), facets: cnt, hidden: hid});
+        }
+        return out;
+    }
+    function refreshCache(m) {
+        // Rebuild the cached (SubD) mesh so the viewport/exporters see the new flags.
+        var lod = m.shape.findProperty("lodlevel");
+        if (lod) {
+            var v = lod.getValue();
+            lod.setValue(v === 0 ? 1 : 0);
+            m.obj.forceCacheUpdate(m.node, true);
+            lod.setValue(v);
+        }
+        m.obj.forceCacheUpdate(m.node, true);
+        return !!lod;
+    }
+"""
+
+_GET_HIDDEN_FACETS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+""" + _HIDDEN_FACETS_COMMON + """
+    var m = resolveMesh(args.nodeLabel);
+    var onlyHidden = args.onlyHidden !== false;
+    var hf = hiddenFlags(m.mesh);
+    return {
+        node: m.node.getLabel(),
+        total_facets: m.mesh.getNumFacets(),
+        hidden_facets: hf.total,
+        face_groups: groupStats(m.mesh, hf.flags, "face", onlyHidden),
+        material_groups: groupStats(m.mesh, hf.flags, "material", onlyHidden)
+    };
+})()
+"""
+
+_SET_HIDDEN_FACETS_SCRIPT = """\
+(function(){
+    var args = getArguments()[0] || {};
+""" + _HIDDEN_FACETS_COMMON + """
+    var m = resolveMesh(args.nodeLabel);
+    var mesh = m.mesh;
+    var hide = args.hidden !== false;
+    var applied = [];
+    var errors = [];
+
+    if (args.unhideAll) {
+        mesh.hideAllFacets();
+        mesh.invertHiddenFacets();
+    }
+
+    function apply(names, kind) {
+        for (var i = 0; i < names.length; i++) {
+            var g = kind === "face" ? mesh.findFaceGroup(names[i]) : mesh.findMaterialGroup(names[i]);
+            if (!g) {
+                errors.push(kind + " group not found: " + names[i]);
+                continue;
+            }
+            if (hide) {
+                mesh.beginFacetSelectionEdit();
+                mesh.deselectAllFacets();
+                mesh.selectFacets(g, true);
+                mesh.finishFacetSelectionEdit();
+                mesh.hideSelectedFacets();
+            } else {
+                mesh.showFacetsByIndexList(g, false);
+            }
+            applied.push({group: names[i], kind: kind, facets: g.count()});
+        }
+    }
+    apply(args.faceGroups || [], "face");
+    apply(args.materialGroups || [], "material");
+
+    // Leave no facet selection behind (it would show up in the Geometry Editor).
+    mesh.beginFacetSelectionEdit();
+    mesh.deselectAllFacets();
+    mesh.finishFacetSelectionEdit();
+
+    var refreshed = args.refresh !== false ? refreshCache(m) : false;
+    var hf = hiddenFlags(mesh);
+    return {
+        node: m.node.getLabel(),
+        hidden: hide,
+        applied: applied,
+        errors: errors,
+        hidden_facets: hf.total,
+        total_facets: mesh.getNumFacets(),
+        cache_refreshed: refreshed
+    };
 })()
 """
 
@@ -773,5 +902,16 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Set one or more per-face-group facet_group_*_vis bool properties on a "
         "DzGeometryShellNode (Bug-Katalog #35 workaround)",
         _SET_SHELL_VISIBILITY_SCRIPT,
+    ),
+    "vangard-get-hidden-facets": (
+        "Report Geometry-Editor hidden polygons on a mesh, per face group and "
+        "material group (base DzFacetMesh isFacetHidden; Bug-Katalog #35)",
+        _GET_HIDDEN_FACETS_SCRIPT,
+    ),
+    "vangard-set-hidden-facets": (
+        "Hide or unhide whole face groups / material groups of a mesh like the "
+        "Geometry Editor does, and rebuild the cached mesh so viewport and "
+        "exporters see it (Bug-Katalog #35)",
+        _SET_HIDDEN_FACETS_SCRIPT,
     ),
 }

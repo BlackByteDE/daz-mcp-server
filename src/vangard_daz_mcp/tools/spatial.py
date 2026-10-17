@@ -4,9 +4,62 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from fastmcp.exceptions import ToolError
+
 from .._mcp import mcp
-from .._client import get_scene, run_dazpy
+from .._client import get_daz_client, get_scene, run_dazpy
 from .._errors import handle_dazpy_error
+
+# Plural filter names accepted by include_types -> the "type" each node reports.
+_NODE_TYPE_FILTERS = {
+    "figures": "figure",
+    "cameras": "camera",
+    "lights": "light",
+    "props": "prop",
+    "bones": "bone",
+}
+
+_TYPED_NODE_TRANSFORMS_SCRIPT = """(function(){
+    var result = [];
+    for (var i = 0; i < Scene.getNumNodes(); i++) {
+        var n = Scene.getNode(i);
+        var type = "prop";
+        // DzLight derives from DzCamera -- test it first.
+        if (n.inherits("DzLight")) type = "light";
+        else if (n.inherits("DzCamera")) type = "camera";
+        else if (n.inherits("DzBone")) type = "bone";
+        else if (n.inherits("DzSkeleton")) type = "figure";
+        var pos = n.getWSPos();
+        var rot = n.getWSRot();
+        result.push({
+            name: n.getName(),
+            label: n.getLabel(),
+            type: type,
+            position: [pos.x, pos.y, pos.z],
+            rotation: [rot.x, rot.y, rot.z],
+            visible: n.isVisible()
+        });
+    }
+    return result;
+})();"""
+
+
+def _resolve_type_filter(include_types: list[str] | None) -> set[str] | None:
+    """Map include_types (plural names) to node "type" values, or None for all."""
+    if include_types is None:
+        return None
+    invalid = set(include_types) - set(_NODE_TYPE_FILTERS)
+    if invalid:
+        raise ToolError(
+            f"Invalid include_types: {sorted(invalid)}. "
+            f"Valid: {sorted(_NODE_TYPE_FILTERS)}"
+        )
+    return {_NODE_TYPE_FILTERS[t] for t in include_types}
+
+
+def _typed_node_transforms() -> list[dict[str, Any]]:
+    """World-space transforms plus a figure/camera/light/bone/prop type per node."""
+    return get_daz_client().execute(_TYPED_NODE_TRANSFORMS_SCRIPT).value or []
 
 
 @mcp.tool()
@@ -340,25 +393,31 @@ async def daz_get_scene_layout(
 
     Args:
         include_types: List of node type strings to include. Defaults to all types.
-                       Valid values: "figures", "cameras", "lights", "props".
+                       Valid values: "figures", "cameras", "lights", "props",
+                       "bones" (the skeleton joints of a figure).
 
     Returns:
-        Dict with nodes (list of {label, type, position, bounds?}) and count.
+        Dict with nodes (list of {label, type, position, rotation, visible})
+        and count.
 
     Example:
         daz_get_scene_layout()                              # everything
         daz_get_scene_layout(["figures", "cameras"])        # characters + cameras only
         daz_get_scene_layout(["lights"])                    # just lights with flux values
     """
+    wanted = _resolve_type_filter(include_types)
+
     def _run() -> dict[str, Any]:
-        scene = get_scene()
-        transforms = scene.all_node_transforms()
+        transforms = _typed_node_transforms()
         nodes = []
         for t in transforms:
+            if wanted is not None and t.get("type") not in wanted:
+                continue
             pos_raw = t.get("position", [0.0, 0.0, 0.0])
             rot_raw = t.get("rotation", [0.0, 0.0, 0.0])
             entry: dict[str, Any] = {
                 "label": t.get("label", t.get("name", "")),
+                "type": t.get("type"),
                 "position": {"x": pos_raw[0], "y": pos_raw[1], "z": pos_raw[2]},
                 "rotation": {"x": rot_raw[0], "y": rot_raw[1], "z": rot_raw[2]},
                 "visible": t.get("visible", True),
@@ -386,8 +445,8 @@ async def daz_find_nearby_nodes(
     Args:
         node_label: Label of the centre node to search around.
         radius: Search radius in centimetres (default 100 cm).
-        include_types: Filter by type — "figures", "cameras", "lights", "props".
-                       None means return all types within radius.
+        include_types: Filter by type — "figures", "cameras", "lights", "props",
+                       "bones". None means return all types within radius.
 
     Returns:
         Dict with center_node, radius, nearby_nodes (list of {label, type, distance, direction}),
@@ -397,18 +456,22 @@ async def daz_find_nearby_nodes(
         daz_find_nearby_nodes("Genesis 9", radius=150)           # everything within 1.5 m
         daz_find_nearby_nodes("Chair", radius=80, include_types=["figures"])  # people near chair
     """
+    wanted = _resolve_type_filter(include_types)
+
     def _run() -> dict[str, Any]:
         scene = get_scene()
         center_node = scene.find_node_by_label(node_label)
         center_pos = center_node.position  # {"x", "y", "z"}
 
-        transforms = scene.all_node_transforms()
+        transforms = _typed_node_transforms()
         nearby: list[dict[str, Any]] = []
 
         for t in transforms:
             label = t.get("label", t.get("name", ""))
             if label == node_label:
                 continue  # skip the centre node itself
+            if wanted is not None and t.get("type") not in wanted:
+                continue
 
             pos_raw = t.get("position", [0.0, 0.0, 0.0])
             dx = pos_raw[0] - center_pos["x"]
@@ -427,6 +490,7 @@ async def daz_find_nearby_nodes(
 
             nearby.append({
                 "label": label,
+                "type": t.get("type"),
                 "distance": dist,
                 "direction": direction,
             })

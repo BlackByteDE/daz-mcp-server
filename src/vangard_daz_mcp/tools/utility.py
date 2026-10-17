@@ -87,7 +87,11 @@ async def daz_execute(
 
     Args:
         script: DazScript (JavaScript) source code to execute.
-        args: Optional JSON object accessible in script as `args` variable.
+        args: Optional JSON object, read in the script with
+            ``var args = getArguments()[0];`` (there is no predefined
+            ``args`` variable — using it bare fails with "args is not defined").
+            Iterate it with ``hasOwnProperty`` guards: a plain ``for-in``
+            also yields Qt method names (Bug-Katalog #38).
 
     Returns:
         Object with keys: success, result, output (list of print() lines), error.

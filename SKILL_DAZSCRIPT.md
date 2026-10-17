@@ -381,6 +381,45 @@ on its tree, but keyboard input works (`*` expands all, Down/Space ticks a row).
 *before* editing the Vendor/Product fields: keyboard ticking alone does not re-enable the
 Accept button. The Asset Directory field is a read-only combo, pick it with the arrow keys.
 
+### Hidden polygons (Geometry Editor hide) — confirmed live (Bug-Katalog #35)
+
+The hidden state lives on the **base** mesh, not on the cached (SubD) mesh:
+
+```javascript
+var obj = node.getObject();
+var mesh = obj.getCurrentShape().getGeometry();      // DzFacetMesh (base cage)
+mesh.isFacetHidden(i);  mesh.hasHiddenFacets();  mesh.getVisibleFacets();
+// hide a face group / surface: select it, then hide the selection
+var g = mesh.findFaceGroup("lThigh");                 // or findMaterialGroup("Legs")
+mesh.beginFacetSelectionEdit(); mesh.deselectAllFacets();
+mesh.selectFacets(g, true); mesh.finishFacetSelectionEdit();
+mesh.hideSelectedFacets();
+mesh.showFacetsByIndexList(g, false);                 // unhide that group (true = no-op)
+mesh.hideAllFacets(); mesh.invertHiddenFacets();      // unhide everything
+// BROKEN: every *ByIndexList method rejects plain JS arrays and face-group .toList()
+//         ("incompatible arguments") — pass the DzFaceGroup/DzMaterialGroup itself.
+// BROKEN: new DzFaceGroup() / new DzIndexList() — not constructible from script.
+// BROKEN: triggering DzFacetHideSelectedAction — no effect from script.
+```
+
+`obj.getCachedGeom()` (what the viewport and the OBJ exporter use) keeps the old
+flags until the SubD cache is rebuilt — `n.update()`, `forceCacheUpdate()`,
+`invalidateFacetGroups()` do not do it; toggling the shape's `lodlevel` property
+(0↔1, then back) does. The hidden state is **not** saved in the `.duf`. Tools:
+`daz_get_hidden_facets` / `daz_set_hidden_facets`.
+
+### Missing Files prompts — confirmed live (Bug-Katalog #6)
+
+`ContentMgr.openFile()` / a scene load with a missing texture shows, in order:
+"Missing Files" (`App.MissingAssetsDialog`, OK =
+`...BasicDlgButtonGrpBox.BasicDlgAcceptDialogBtn`), then one "Missing File"
+(`App.WarningMessageBox`, "Could not find file: <path>", buttons Locate... / Skip /
+Stop Asking) per file, then "Missing Files" again. All answer to UIA `Invoke()`;
+dismissed within ~0.3 s DAZ carries on, left open it crashes.
+`App.startPromptSuppression()` does **not** help (dialog still shows, crash ~10 s
+later). `daz_load_file` and `daz_apply_material_preset(allow_missing=True)` run
+`_ui_automation.drive_missing_files_dialogs` next to the load.
+
 ### Runtime bone rigging (`new DzBone` + `DzSkinBinding`) — confirmed live (Bug-Katalog #30)
 
 Adding a child bone to an existing figure at runtime (`new DzBone()` +

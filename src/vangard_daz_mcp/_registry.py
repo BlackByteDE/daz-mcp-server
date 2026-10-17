@@ -8306,10 +8306,21 @@ _LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
     loader.setFilename(args.objPath);
     if (args.morphName) loader.setMorphName(String(args.morphName));
 
-    var loadModeVal = lookupEnum(LOAD_MODES, args.loadMode || "EntireFigure", "loadMode");
-    var okMode = loader.setLoadMode(loadModeVal, node);
-    if (!okMode) {
-        throw new Error("setLoadMode failed for mode " + args.loadMode + " on node " + node.getLabel());
+    // "Auto": the valid mode depends on the node (single-skin figure like
+    // Genesis 8/9, legacy figure, or plain prop) -- take the first one
+    // setLoadMode() accepts.
+    var requestedMode = args.loadMode || "Auto";
+    var candidates = requestedMode === "Auto"
+        ? ["SingleSkinFigure", "EntireFigure", "PrimaryNode"] : [requestedMode];
+    var loadModeUsed = null;
+    for (var ci = 0; ci < candidates.length && !loadModeUsed; ci++) {
+        var modeVal = lookupEnum(LOAD_MODES, candidates[ci], "loadMode");
+        var okMode = false;
+        try { okMode = loader.setLoadMode(modeVal, node); } catch (eMode) { okMode = false; }
+        if (okMode) loadModeUsed = candidates[ci];
+    }
+    if (!loadModeUsed) {
+        throw new Error("setLoadMode failed for mode " + candidates.join("/") + " on node " + node.getLabel());
     }
 
     loader.setOverwriteExisting(lookupEnum(OVERWRITE_MODES, args.overwriteMode || "MakeUnique", "overwriteMode"));
@@ -8408,7 +8419,7 @@ _LOAD_MORPH_PRO_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
         node: node.getLabel(),
         file: args.objPath,
         morphName: resolvedMorphName,
-        loadMode: args.loadMode || "EntireFigure",
+        loadMode: loadModeUsed,
         overwriteMode: args.overwriteMode || "MakeUnique",
         mirroring: args.mirroring || "DoNotMirror",
         controlProperty: controlPropLabel,

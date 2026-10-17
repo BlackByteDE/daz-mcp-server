@@ -6,6 +6,70 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.11 — 2026-10-17
+
+### Added
+
+- **`daz_get_hidden_facets(node_label, only_hidden=True)` /
+  `daz_set_hidden_facets(node_label, face_groups, material_groups, hidden,
+  unhide_all)`** (`tools/scene.py`) — read and set Geometry-Editor polygon
+  hiding on a plain mesh, per face group and per material group. Bug-Katalog
+  #35 said no API exposed this; it does, on the *base* `DzFacetMesh`
+  (`isFacetHidden(i)`, `hasHiddenFacets()`, `selectFacets(group)` +
+  `hideSelectedFacets()`, `showFacetsByIndexList(group, false)`), just not on
+  `getCachedGeom()`, which only picks the flags up when the SubD cache is
+  rebuilt — the setter toggles `lodlevel` to force that, so viewport and
+  exporters see the change at once. Hiding is session-only (not saved in the
+  `.duf`). Live-verified 2026-10-17 on G8F incl. OBJ export counts. New
+  registry scripts `vangard-get-hidden-facets`, `vangard-set-hidden-facets`.
+- **Missing Files prompts are dismissed automatically** (Bug-Katalog #6) —
+  `daz_load_file(..., dismiss_missing_files=True)` (new, default on) and
+  `daz_apply_material_preset(..., allow_missing=True)` run a Windows UI
+  Automation loop (`_ui_automation.drive_missing_files_dialogs`) next to the
+  load that clicks *OK* on "Missing Files" (`App.MissingAssetsDialog`) and
+  *Skip* on each "Missing File" box until the load returns. Both report
+  `missing_files` and `dialogs_dismissed`. Before, a scene or preset with one
+  missing texture blocked the call and crashed DAZ Studio. Silently inactive
+  without UI Automation. Live-verified 2026-10-17 (3 prompts per load, DAZ
+  stable).
+- **`daz_export_obj(..., include_hidden=False)`** — the OBJ exporter's
+  `IgnoreInvisible` option (default true) drops faces hidden in the Geometry
+  Editor (Bug-Katalog #39: G8F thighs missing). `include_hidden=True` exports
+  the full mesh. Live-verified 2026-10-17: 61 608 vs. 65 472 faces.
+
+### Changed
+
+- **`daz_load_morph_pro` `load_mode` defaults to `"Auto"`** — tries
+  `SingleSkinFigure`, `EntireFigure`, `PrimaryNode` and uses the first one DAZ
+  accepts (returned as `loadMode`). The old default `EntireFigure` failed on
+  Genesis 8/9 and on props. Live-verified on G8F and a prop.
+- **`daz_search_morphs` defaults to `include_zero=True`** (Bug-Katalog #42 was
+  a misdiagnosis: the "missing" morphs were at 0 and filtered out).
+- **`daz_get_scene_layout` / `daz_find_nearby_nodes` now apply
+  `include_types`** — it was documented but ignored; every node now carries a
+  `type` (`figure`/`camera`/`light`/`bone`/`prop`), `"bones"` is a new filter
+  value, unknown values raise. Note: `DzLight` inherits `DzCamera`.
+
+### Fixed
+
+- **`daz_load_morph_pro(reverse_deformations=True)`** (Bug-Katalog #41) —
+  `applyReverseDeformationsPose()` returns a `DzError` code (0 = success), so
+  every successful call threw. A pose path is checked for existence up front.
+  Live-verified 2026-10-17 on a posed G8F: morph reproduces the target OBJ to
+  0.0001 cm (33 cm off without reverse deformations).
+- **`daz_run_transfer_utility`** no longer errors after a successful transfer
+  (Bug-Katalog #43: stale JS wrappers after the target becomes a `DzFigure`).
+- **`daz_batch_select(add_to_selection=False)`** now replaces the selection
+  instead of adding to it.
+- **`daz_apply_material_preset` preflight** reported image-library ids
+  (`"id": "X.jpg"`) as missing maps, so it refused every stock DAZ preset that
+  has an image library. Only paths count now.
+- **`_wait_for_async_result`** returned `None` when the wait timed out while
+  the request was still running, which looked like a successful call; it now
+  raises (affects the Geometry Shell / Strand Hair / Missing Files tools).
+- `daz_execute` docstring: arguments come from `getArguments()[0]`, there is
+  no predefined `args` variable.
+
 ## 0.5.8+bb.10 — 2026-10-10
 
 ### Added

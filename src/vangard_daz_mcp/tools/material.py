@@ -1,16 +1,19 @@
 """Material and surface tools for DAZ Studio scene nodes."""
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
 from fastmcp.exceptions import ToolError
 
-from .._mcp import mcp, _execute_by_id
+from .. import _ui_automation
+from .._mcp import mcp, _execute_by_id, _execute_by_id_async, _wait_for_async_result
 from .._client import get_daz_client, run_dazpy
 from .._errors import handle_dazpy_error
 
@@ -30,7 +33,10 @@ def extract_preset_map_paths(preset_path: str) -> list[str]:
     def walk(obj: Any) -> None:
         if isinstance(obj, str):
             base = obj.split("#", 1)[0].replace("\\", "/")
-            if _MAP_EXT.search(base):
+            # A bare file name is an image_library "id"/"name"/"label", not a
+            # path -- checking it made every stock preset with an image
+            # library look like it had a missing map.
+            if "/" in base and _MAP_EXT.search(base):
                 # DSON/.duf stores content-relative paths URL-encoded (e.g.
                 # "%20" for a space, "%203D" for " 3D") — decode before the
                 # existence check downstream, or a real file on disk with a
@@ -209,6 +215,7 @@ async def daz_apply_material_preset(
     node_label: str,
     preset_path: str,
     allow_missing: bool = False,
+    timeout: float = 120.0,
 ) -> dict[str, Any]:
     """Apply a DAZ material preset (.duf) file to a scene node.
 
@@ -223,13 +230,20 @@ async def daz_apply_material_preset(
     Texture paths referenced by the preset are resolved before ``openFile``.
     Missing maps abort with an error instead of opening Studio's Missing Files
     dialog (which blocks the script server and can crash DAZ if left open).
+    With ``allow_missing=True`` the preset is applied anyway and every Missing
+    Files / Missing File prompt is dismissed automatically via Windows UI
+    Automation (missing maps are skipped, not located) — Bug-Katalog #6.
 
     Args:
         node_label: Display label of the node to apply the material to
             (e.g. ``"Genesis 9"``).
         preset_path: Absolute path to the ``.duf`` material preset file
             (e.g. ``"C:/DAZ/My Library/Materials/Skin/Hero Skin.duf"``).
-        allow_missing: If True, apply anyway when maps are missing (dialog risk).
+        allow_missing: If True, apply anyway when maps are missing; the missing
+            maps are left empty. Needs DAZ Studio on this machine with an
+            unlocked desktop (Windows UI Automation dismisses the prompts).
+        timeout: Seconds to wait for the preset load when ``allow_missing`` is
+            True (default 120).
 
     Returns:
         Dict with keys:
@@ -238,6 +252,8 @@ async def daz_apply_material_preset(
         - preset: path used
         - materials: list of material slot labels on the node after application
         - material_count: number of material slots
+        - missing_files / dialogs_dismissed: only with ``allow_missing=True`` —
+          the files DAZ reported missing and how many prompts were dismissed
 
     Examples:
         daz_apply_material_preset("Genesis 9", "C:/Library/Materials/Skin/Hero Skin.duf")
@@ -247,15 +263,30 @@ async def daz_apply_material_preset(
         map_paths = extract_preset_map_paths(preset_path)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError, gzip.BadGzipFile) as exc:
         raise ToolError(f"Failed to read material preset {preset_path!r}: {exc}") from exc
-    return await _execute_by_id(
-        "vangard-apply-material-preset",
-        {
-            "nodeLabel": node_label,
-            "presetPath": preset_path,
-            "mapPaths": map_paths,
-            "allowMissing": allow_missing,
-        },
-    )
+    args = {
+        "nodeLabel": node_label,
+        "presetPath": preset_path,
+        "mapPaths": map_paths,
+        "allowMissing": allow_missing,
+    }
+    if not allow_missing:
+        return await _execute_by_id("vangard-apply-material-preset", args)
+
+    # openFile() blocks on modal Missing Files prompts — run it async and
+    # dismiss them from a worker thread until the request is done.
+    _ui_automation.require_interactive_desktop()
+    submitted = await _execute_by_id_async("vangard-apply-material-preset", args)
+    finished = threading.Event()
+    driver = asyncio.create_task(asyncio.to_thread(
+        _ui_automation.drive_missing_files_dialogs, finished.is_set, timeout + 10.0,
+    ))
+    try:
+        result = await _wait_for_async_result(
+            submitted["request_id"], timeout_seconds=int(timeout))
+    finally:
+        finished.set()
+    dialogs = await driver
+    return {**(result or {}), **dialogs}
 
 
 @mcp.tool()

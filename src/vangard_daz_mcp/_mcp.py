@@ -151,6 +151,14 @@ async def _wait_for_async_result(
     status = data.get("status", "unknown")
     if status == "failed":
         raise ToolError(f"Async request failed: {data.get('error', 'unknown error')}")
+    if status in ("queued", "running"):
+        # The wait timed out — returning the (empty) result here used to look
+        # like a successful call that simply returned None.
+        raise ToolError(
+            f"Async request {request_id} still {status} after {timeout_seconds}s "
+            "(DAZ Studio may be blocked on a dialog) — check it with "
+            "daz_get_request_status."
+        )
     return data.get("result")
 
 

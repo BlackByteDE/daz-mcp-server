@@ -506,7 +506,7 @@ async def daz_load_morph_pro(
     node_label: str,
     obj_path: str,
     morph_name: str | None = None,
-    load_mode: str = "EntireFigure",
+    load_mode: str = "Auto",
     overwrite_mode: str = "MakeUnique",
     mirroring: str = "DoNotMirror",
     scale: float = 1.0,
@@ -548,16 +548,17 @@ async def daz_load_morph_pro(
         obj_path: Absolute path to the source ``.obj`` morph target.
         morph_name: Name for the new morph dial. Defaults to a name derived from
             the OBJ filename if omitted.
-        load_mode: One of ``EntireFigure`` (default), ``SelectedNodes``,
-            ``PrimaryNode``, ``SingleSkinFigure``, ``SingleSkinFigureFromGraft``.
-            Which values are valid depends on what ``node_label`` actually is
-            (confirmed live): a plain prop (no skeleton) only accepts
-            ``PrimaryNode`` — ``EntireFigure`` raises immediately. A legacy
-            (non-"single skin") figure only accepts ``EntireFigure``,
-            ``SelectedNodes``, or ``PrimaryNode``. A "single skin" figure only
-            accepts ``SingleSkinFigure`` or ``SingleSkinFigureFromGraft``. The
-            default of ``EntireFigure`` is only correct for that middle case —
-            pass ``PrimaryNode`` explicitly for props.
+        load_mode: ``Auto`` (default) or one of ``EntireFigure``,
+            ``SelectedNodes``, ``PrimaryNode``, ``SingleSkinFigure``,
+            ``SingleSkinFigureFromGraft``. Which values are valid depends on
+            what ``node_label`` actually is (confirmed live): a plain prop (no
+            skeleton) only accepts ``PrimaryNode``. A legacy (non-"single
+            skin") figure only accepts ``EntireFigure``, ``SelectedNodes``, or
+            ``PrimaryNode``. A "single skin" figure — Genesis 8/9 — only
+            accepts ``SingleSkinFigure`` or ``SingleSkinFigureFromGraft``.
+            ``Auto`` tries ``SingleSkinFigure``, ``EntireFigure``,
+            ``PrimaryNode`` in that order and uses the first one DAZ accepts;
+            the mode used is returned as ``loadMode``.
         overwrite_mode: How to handle an existing morph of the same name — one of
             ``MakeUnique`` (default, renames the new one), ``DeltasAndERCLinks``,
             ``DeltasOnly``. Attention (confirmed live): if a morph with the
@@ -578,7 +579,9 @@ async def daz_load_morph_pro(
         delta_tolerance: Minimum vertex deviation to record as a delta.
         reverse_deformations: If True, "reverses" a posed base mesh before
             diffing so the morph is captured in rest pose. Requires the base
-            OBJ to have been exported while posed.
+            OBJ to have been exported while posed. Confirmed live on a posed
+            Genesis 8 Female: the morph at 1.0 in that pose reproduces the
+            target OBJ exactly (0.0 cm); without it the same OBJ is 33 cm off.
         reverse_deformations_pose_path: Absolute filesystem path to an existing
             pose ``.duf`` describing the pose the OBJ was exported in (applied
             before the morph is created). Optional: if omitted, the current
@@ -640,9 +643,9 @@ async def daz_load_morph_pro(
         - Use ``daz_erc_freeze`` instead if you need to link an *existing* posed
           shape to a controller — this tool is specifically for importing a new
           OBJ-based morph target.
-        - On a plain prop, pass ``load_mode="PrimaryNode"`` — the default
-          ``"EntireFigure"`` only works on (non-"single skin") figures and
-          raises immediately on props (confirmed live).
+        - Leave ``load_mode`` at ``"Auto"`` unless you need ``SelectedNodes``
+          or ``SingleSkinFigureFromGraft`` — a wrong fixed mode raises
+          immediately (e.g. ``"EntireFigure"`` on Genesis 8/9 or on a prop).
         - Pick a ``morph_name`` you've confirmed is unique via
           ``daz_search_morphs``/``daz_list_morphs`` first. ``overwrite_mode``
           does not silently resolve a name collision — DAZ Studio opens a

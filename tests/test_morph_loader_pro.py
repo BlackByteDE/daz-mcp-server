@@ -169,7 +169,7 @@ class TestBasicBehavior:
         args = captured["args"]
         assert args["nodeLabel"] == "Genesis 9"
         assert args["objPath"] == "C:/morphs/bicep_flex.obj"
-        assert args["loadMode"] == "EntireFigure"
+        assert args["loadMode"] == "Auto"
         assert args["overwriteMode"] == "MakeUnique"
         assert args["mirroring"] == "DoNotMirror"
         assert args["scale"] == 1.0
@@ -356,3 +356,12 @@ class TestControlProperty:
                 create_control_property=True,
                 control_property_name="Ghost Dial",
             )
+
+
+def test_script_auto_load_mode_tries_valid_modes_in_order():
+    """Auto falls back SingleSkinFigure -> EntireFigure -> PrimaryNode (live: G8F
+    rejects EntireFigure, props reject everything but PrimaryNode)."""
+    from vangard_daz_mcp._registry import _REGISTRY
+    script = _REGISTRY["vangard-load-morph-pro"][1]
+    assert '["SingleSkinFigure", "EntireFigure", "PrimaryNode"]' in script
+    assert "loadMode: loadModeUsed" in script

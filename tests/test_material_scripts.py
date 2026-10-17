@@ -33,13 +33,28 @@ def test_extract_preset_map_paths_gzip_and_plain(tmp_path: Path):
     plain.write_text(json.dumps(payload), encoding="utf-8")
     gz = tmp_path / "gz.duf"
     gz.write_bytes(gzip.compress(json.dumps(payload).encode("utf-8")))
-    assert extract_preset_map_paths(str(plain)) == [
-        "skin.jpg",
-        "/Runtime/Textures/skin.jpg",
-    ]
-    assert extract_preset_map_paths(str(gz)) == [
-        "skin.jpg",
-        "/Runtime/Textures/skin.jpg",
+    assert extract_preset_map_paths(str(plain)) == ["/Runtime/Textures/skin.jpg"]
+    assert extract_preset_map_paths(str(gz)) == ["/Runtime/Textures/skin.jpg"]
+
+
+def test_extract_preset_map_paths_ignores_image_library_ids(tmp_path: Path):
+    """A stock DAZ preset names each image_library entry after the file
+    ("id"/"name"/"label" = "X.jpg") — those are not paths and used to be
+    reported as missing maps, so every stock preset was refused."""
+    payload = {
+        "image_library": [{
+            "id": "G8FBaseEyelashes_1006.jpg",
+            "name": "G8FBaseEyelashes_1006.jpg",
+            "map": [{
+                "url": "/Runtime/Textures/DAZ/G8FBaseEyelashes_1006.jpg",
+                "label": "G8FBaseEyelashes_1006.jpg",
+            }],
+        }],
+    }
+    duf = tmp_path / "stock.duf"
+    duf.write_text(json.dumps(payload), encoding="utf-8")
+    assert extract_preset_map_paths(str(duf)) == [
+        "/Runtime/Textures/DAZ/G8FBaseEyelashes_1006.jpg",
     ]
 
 

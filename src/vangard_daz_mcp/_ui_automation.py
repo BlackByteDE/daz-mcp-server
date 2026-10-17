@@ -16,9 +16,11 @@ investigation, including approaches that looked reasonable but did not work.
 """
 from __future__ import annotations
 
+import asyncio
+import threading
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Any, Awaitable, Callable
 
 from fastmcp.exceptions import ToolError
 
@@ -487,3 +489,139 @@ def drive_modifier_asset_save(
     _invoke_qt_button(hwnd, _MODIFIER_ACCEPT_BTN)
     _wait_until_closed(hwnd, dialog_timeout)
     return {"baseDataPath": used_dir, "ticked": ticked}
+
+
+# Missing-texture prompts raised by ContentMgr.openFile() while a preset loads
+# (Bug-Katalog #6). Confirmed live 2026-10-17 with one missing map in a
+# material preset; the sequence was:
+#   1. "Missing Files" (App.MissingAssetsDialog, summary list)  -> OK
+#   2. "Missing File" (App.WarningMessageBox, one per file:
+#      "Could not find file: <path>", Locate... / Skip / Stop Asking) -> Skip
+#   3. "Missing Files" again                                     -> OK
+# All three respond to UIA Invoke(). Dismissed within ~0.3 s, DAZ Studio
+# carries on and the load completes; left open, it crashes.
+_MISSING_FILES_DLG_TITLE = "Missing Files"
+_MISSING_FILE_DLG_TITLE = "Missing File"
+_MISSING_FILES_ACCEPT_BTN = (
+    "App.MissingAssetsDialog.BasicDlgButtonGrpBox.BasicDlgAcceptDialogBtn"
+)
+_MISSING_FILE_SKIP_BTN = f"{_WARNING_BOX}.qt_msgbox_buttonbox.Button1"
+_MISSING_FILE_PREFIX = "Could not find file: "
+
+
+def _skip_missing_file(win) -> str:
+    """Press "Skip" on a per-file "Missing File" box; return the reported path."""
+    text = ""
+    try:
+        text = win.child_window(auto_id=f"{_WARNING_BOX}.qt_msgbox_label").window_text()
+    except Exception:  # noqa: BLE001 - best effort, the Skip below matters more
+        pass
+    skip = None
+    for btn in win.descendants(control_type="Button"):
+        if (btn.element_info.name or "").strip().lower() == "skip":
+            skip = btn
+            break
+    if skip is None:
+        skip = win.child_window(auto_id=_MISSING_FILE_SKIP_BTN, control_type="Button")
+    skip.invoke()
+    return text.removeprefix(_MISSING_FILE_PREFIX)
+
+
+def drive_missing_files_dialogs(
+    done: Callable[[], bool],
+    timeout: float = 120.0,
+    poll_interval: float = 0.15,
+) -> dict:
+    """Dismiss every Missing Files / Missing File prompt until ``done()`` is true.
+
+    Run in a worker thread next to an async ``openFile()`` request; ``done``
+    should flip once that request has finished. Missing files are skipped
+    (the load continues without them), never located.
+
+    Returns ``{"dialogs_dismissed": n, "missing_files": [paths]}``.
+    """
+    _require_pywinauto()
+    pid = find_daz_studio_pid()
+    deadline = time.monotonic() + timeout
+    dismissed = 0
+    missing: list[str] = []
+    titles = (_MISSING_FILES_DLG_TITLE, _MISSING_FILE_DLG_TITLE)
+
+    def cb(hwnd: int, found: list) -> bool:
+        try:
+            _, wpid = win32process.GetWindowThreadProcessId(hwnd)
+        except Exception:  # pragma: no cover - defensive
+            return True
+        if wpid == pid and win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if title in titles:
+                found.append((hwnd, title))
+        return True
+
+    while not done():
+        if time.monotonic() > deadline:
+            raise ToolError(
+                f"Preset load still running after {timeout}s while dismissing "
+                "Missing Files prompts — check DAZ Studio for an open dialog."
+            )
+        found: list = []
+        win32gui.EnumWindows(cb, found)
+        for hwnd, title in found:
+            try:
+                win = Application(backend="uia").connect(handle=hwnd).window(handle=hwnd)
+                if title == _MISSING_FILE_DLG_TITLE:
+                    path = _skip_missing_file(win)
+                    if path and path not in missing:
+                        missing.append(path)
+                else:
+                    win.child_window(
+                        auto_id=_MISSING_FILES_ACCEPT_BTN, control_type="Button"
+                    ).invoke()
+                _wait_until_closed(hwnd, 5.0, poll_interval=0.05)
+                dismissed += 1
+            except Exception:  # noqa: BLE001 - window vanished mid-way; re-poll
+                continue
+        time.sleep(poll_interval)
+    return {"dialogs_dismissed": dismissed, "missing_files": missing}
+
+
+def missing_files_driver_available() -> bool:
+    """True when Missing Files prompts can be dismissed right now (Windows,
+    pywinauto installed, DAZ Studio running locally, desktop unlocked)."""
+    if not _PYWINAUTO_AVAILABLE:
+        return False
+    try:
+        require_interactive_desktop()
+        find_daz_studio_pid()
+    except ToolError:
+        return False
+    return True
+
+
+async def run_with_missing_files_driver(
+    work: Awaitable[Any],
+    timeout: float = 300.0,
+) -> tuple[Any, dict | None]:
+    """Await ``work`` (a load that may raise Missing Files prompts) while
+    dismissing those prompts from a worker thread.
+
+    Returns ``(result, dialogs)``; ``dialogs`` is the
+    ``drive_missing_files_dialogs`` summary, or None when no driver could run
+    (then ``work`` is simply awaited, exactly as before).
+    """
+    if not missing_files_driver_available():
+        return await work, None
+    finished = threading.Event()
+    driver = asyncio.create_task(
+        asyncio.to_thread(drive_missing_files_dialogs, finished.is_set, timeout)
+    )
+    try:
+        result = await work
+    finally:
+        finished.set()
+    try:
+        dialogs = await driver
+    except ToolError:
+        dialogs = None
+    return result, dialogs
+
