@@ -6,7 +6,7 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
-## Unreleased
+## 0.5.8+bb.13 — 2026-10-18
 
 ### Added
 
