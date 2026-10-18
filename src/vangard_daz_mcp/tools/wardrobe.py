@@ -34,7 +34,11 @@ async def daz_list_fitted_items(figure_label: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def daz_fit_clothing(clothing_label: str, figure_label: str) -> dict[str, Any]:
+async def daz_fit_clothing(
+    clothing_label: str,
+    figure_label: str,
+    morph_projection: bool = True,
+) -> dict[str, Any]:
     """Fit a clothing or prop item to a base figure.
 
     For figure-based conforming clothing (items that are themselves a DzFigure),
@@ -47,6 +51,10 @@ async def daz_fit_clothing(clothing_label: str, figure_label: str) -> dict[str, 
     Args:
         clothing_label: Display label of the clothing/prop node to fit.
         figure_label: Display label of the target base figure.
+        morph_projection: If False, switch off auto-follow morph projection
+            on the item *before* fitting (see ``daz_set_morph_projection``),
+            so none of the figure's body morphs / JCMs get projected onto it.
+            Use for rigid items such as head-weighted hair.
 
     Returns:
         Dict with keys:
@@ -55,15 +63,92 @@ async def daz_fit_clothing(clothing_label: str, figure_label: str) -> dict[str, 
         - figure: confirmed figure label
         - method: which API was used (``setFollowTarget``, ``followSkeleton``,
           or ``addNodeChild`` for the parenting fallback)
+        - morph_projection: only with ``morph_projection=False`` — the
+          per-node entry of ``daz_set_morph_projection`` (contains ``error``
+          when the item is not a figure, e.g. a plain prop)
 
     Examples:
         daz_fit_clothing("Sci-Fi Bodysuit", "Genesis 9")
         daz_fit_clothing("Leather Jacket", "Genesis 8 Female")
+        daz_fit_clothing("Braid Hair", "Genesis 8 Female", morph_projection=False)
     """
-    return await _execute_by_id(
+    projection = None
+    if not morph_projection:
+        # Must happen before setFollowTarget(): the projection it queues runs
+        # deferred and ignores a switch set afterwards in the same call.
+        res = await _execute_by_id("vangard-morph-projection", {
+            "nodeLabels": [clothing_label],
+            "enabled": False,
+            "removeExisting": True,
+            "allowUnfitted": True,
+        })
+        projection = (res.get("results") or [None])[0]
+    result = await _execute_by_id(
         "vangard-fit-clothing",
         {"clothingLabel": clothing_label, "figureLabel": figure_label},
     )
+    if projection is not None:
+        result["morph_projection"] = projection
+    return result
+
+
+@mcp.tool()
+async def daz_set_morph_projection(
+    node_labels: list[str],
+    enabled: bool | None = False,
+    remove_existing: bool = True,
+) -> dict[str, Any]:
+    """Report or switch auto-follow morph projection on fitted items.
+
+    A fitted item (clothing or hair that is itself a figure) gets projected
+    copies of the target figure's morphs: body shapes (breasts, glutes, head
+    shape) and pose-driven JCMs (``pJCMNeckBack_27``, ``pJCMCollarTwist_*``).
+    On rigid items — e.g. head-weighted hair — that bends parts with every
+    neck pose and makes long hair "grow" with body morphs. Switching it off
+    sets ``DzFollowingProjectionOptions.disableMorphProjection``, which is
+    saved with the item and survives save + reload.
+
+    Only real projections are touched: morphs that live in the scene only
+    (no ``.dsf`` file) and follow the same-named morph on the follow target.
+    The item's own morphs — including vendor-shipped fit morphs that also
+    follow the figure (``FBMHeight`` etc.) — are never reported or removed.
+
+    Treat every part that moves as one unit the same way (hair cap + ties +
+    braids): mixing projected and unprojected parts opens gaps at the seams.
+
+    Args:
+        node_labels: Fitted items (label, internal name, elementID or
+            ``Parent/Label`` path).
+        enabled: ``False`` (default) switches projection off, ``True``
+            switches it back on, ``None`` only reports the current state and
+            the projected morph names without changing anything.
+        remove_existing: With ``enabled=False``, also remove the morphs that
+            were already projected. The switch alone does not remove them in
+            the running session — they keep deforming until the scene is
+            reloaded.
+
+    Returns:
+        Dict with ``results``: one entry per node with ``node``, ``target``,
+        ``previous_enabled``, ``enabled``, ``projected_morphs`` (still
+        present afterwards), ``removed_morphs`` and — for ``enabled=True`` —
+        ``reprojection_queued``. Re-enabling regenerates nothing by itself;
+        the tool re-fits the item, and the new projection runs deferred, so
+        check with ``enabled=None`` in a later call. Nodes that are not
+        fitted or not figures get an ``error`` entry instead; the other
+        nodes are still processed.
+
+    Examples:
+        daz_set_morph_projection(["Braid Hair", "Hair Ties", "Braids"])
+        daz_set_morph_projection(["Braid Hair"], enabled=None)
+        daz_set_morph_projection(["Braid Hair"], enabled=True)
+    """
+    if not node_labels:
+        raise ToolError("node_labels must contain at least one node")
+    return await _execute_by_id("vangard-morph-projection", {
+        "nodeLabels": list(node_labels),
+        "enabled": enabled,
+        "removeExisting": remove_existing,
+    })
 
 
 @mcp.tool()

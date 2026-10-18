@@ -6,6 +6,26 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## Unreleased
+
+### Added
+
+- **`daz_set_morph_projection(node_labels, enabled=False,
+  remove_existing=True)`** (`tools/wardrobe.py`) — report or switch the
+  auto-follow morph projection on fitted items
+  (`DzFollowingProjectionOptions.disableMorphProjection`, saved with the
+  item). Fitted hair/clothing gets projected copies of the figure's body
+  morphs and pose JCMs; on rigid head-weighted hair (pinkcharakter) the JCMs
+  bent parts by up to 2 cm with the neck pose. The switch alone leaves the
+  already projected morphs active in the running session, so the tool also
+  removes them; `enabled=None` only reports. A projected morph is one with
+  no `.dsf` file that follows the same-named target morph — vendor-shipped
+  fit morphs are never touched. Live-verified 2026-10-18 on G8F + Blazer
+  Shoes incl. save/reload. New registry script `vangard-morph-projection`.
+- **`daz_fit_clothing(..., morph_projection=True)`** — `False` switches
+  projection off *before* fitting; the projection that `setFollowTarget()`
+  queues runs deferred and ignores a switch set afterwards.
+
 ## 0.5.8+bb.12 — 2026-10-18
 
 ### Added

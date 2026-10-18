@@ -26,7 +26,14 @@ Tools for morphs, emotions, and movement.
 
 ## Wardrobe & dForce
 - `daz_list_fitted_items`: See what clothing/hair is fitted to a figure.
-- `daz_fit_clothing` / `daz_unfit_item`: Attach or detach clothing.
+- `daz_fit_clothing` / `daz_unfit_item`: Attach or detach clothing. Fitting projects the
+  figure's body morphs and JCMs onto the item; pass `morph_projection=False` to fit
+  without that (e.g. rigid hair).
+- `daz_set_morph_projection(node_labels, enabled=False, remove_existing=True)`
+  *(fork-only)*: Switch auto-follow morph projection off (or back on) on already fitted
+  items and remove the morphs projected so far; `enabled=None` only reports them. Saved
+  with the item. Treat all parts of one unit alike (hair cap + ties + braids), or gaps open
+  at the seams. Background: SKILL_DAZSCRIPT.md's "Auto-follow morph projection".
 - `daz_run_dforce_simulation`: Run cloth physics simulation.
 - `daz_bake_simulation`: Bake sim results; `daz_set_dforce_property` to tune parameters.
 - `daz_get_figure_info`, `daz_set_subdivision`: Diagnostics and mesh LOD.

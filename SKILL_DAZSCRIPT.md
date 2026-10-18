@@ -408,6 +408,55 @@ flags until the SubD cache is rebuilt — `n.update()`, `forceCacheUpdate()`,
 (0↔1, then back) does. The hidden state is **not** saved in the `.duf`. Tools:
 `daz_get_hidden_facets` / `daz_set_hidden_facets`.
 
+### Auto-follow morph projection on fitted items — confirmed live
+
+A fitted `DzFigure` (clothing, hair) gets projected copies of the target figure's morphs
+as modifiers: body shapes (breast, booty, head shape) **and** the pose-driven JCMs
+(`pJCMNeckBack_27`, `pJCMCollarTwist_*` …). On a rigid head-weighted hair item those
+moved parts by up to 2 cm, changing with the neck pose every frame, and body morphs
+made long hair "grow" with the breasts.
+
+```javascript
+// Persistent switch, saved with the item — survives save + reload:
+fittedNode.getFollowingProjectionOptions().disableMorphProjection = true;
+// (DzFollowingProjectionOptions; also has nameFilters, typeFilters,
+//  excludeSourceGroups, overrideInclude — semantics untested)
+
+// BROKEN as a fix: obj.removeModifier(m) on the projected morphs. Works for the
+// session, but DAZ regenerates every projected morph when the scene is loaded again.
+```
+
+Set it on every part that has to move as one unit (e.g. hair cap + ties + braids):
+mixing projected and unprojected parts opens gaps at the seams.
+
+Probed live 2026-10-18 (G8F + Blazer Shoes, scratch scene):
+
+```javascript
+// Recognising a projected morph — BOTH must hold:
+var isProjected = String(m.assetUri.filePath) === ""          // scene-local "#name", no .dsf
+    && m.getValueControl().getFollowProperty() ===
+       target.getObject().findModifier(m.getName()).getValueControl();
+// followProperty alone is NOT enough: vendor-shipped fit morphs (FBMHeight, FBMThin ...
+// from the item's own .dsf) follow the target too — they have a filePath.
+// Not usable: valueControl.isDynamicallyAutoFollow() (false on all), canAutoFollow()
+// (true on almost all), getFollowingProjectionOptions().getNumCorrelatedMorphs() (0).
+```
+
+- Setting `disableMorphProjection = true` does **not** remove already projected
+  morphs in the running session — they keep deforming. Remove them with
+  `obj.removeModifier(m)`; with the switch on, posing, re-fitting and save + reload
+  do not bring them back.
+- Projection runs **deferred** (event loop, after the script returns), triggered by
+  `setFollowTarget()` and only for target morphs that are active at that time. A
+  switch set *after* `setFollowTarget()` in the same script does not stop the queued
+  pass — set it before fitting.
+- Turning the switch back off regenerates nothing, not even after reload; a re-fit
+  (`setFollowTarget(null)` → target) queues a new projection.
+- `DzFigure.clearGeneratedMorphs()` removed only one of six projected morphs (the
+  inactive one) — not a substitute for `removeModifier`.
+
+Tool: `daz_set_morph_projection` (and `daz_fit_clothing(morph_projection=False)`).
+
 ### Missing Files prompts — confirmed live (Bug-Katalog #6)
 
 `ContentMgr.openFile()` / a scene load with a missing texture shows, in order:
