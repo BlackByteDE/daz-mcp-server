@@ -1,6 +1,10 @@
 # CLAUDE.md (Project Index)
 
 Bug-Katalog: `D:\Dev\pinkcharakter\docs\daz-mcp-bridge-bugs.md`
+Fork-Todo: [FORK_TODO.md](FORK_TODO.md) — eigene Aufträge des Forks; andere
+Projekte legen ihre Bridge-Aufträge dort ab. Die beads-Issues (`bd`) sind
+Upstreams Roadmap (G.Hirpara, dazpy-Migration), nicht unsere — nicht
+abarbeiten, das gäbe Merge-Konflikte mit Upstream.
 (Handoff-Notizen für die separate OpenCode-Session: `D:\OpenCode\Projects\daz-mcp-dev-handoff.md`)
 
 ## Fork-Versionsschema
