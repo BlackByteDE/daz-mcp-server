@@ -6,6 +6,25 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.14 — 2026-10-20
+
+### Added
+
+- **`daz_export_geometry_frames(frames, output_path, node, indices, surfaces,
+  bones, resolution, scene_update)`** (`tools/geometry.py`) — client for the
+  native `POST /geometry/frames` endpoint (daz-script-server >= 2.9.2+bb.2,
+  spec in `daz-script-server/include/GeometryExport.h`). Deformed vertices
+  (and world-space bone origins) for many frames in one binary float32
+  response instead of a DazScript loop (~140 ms/frame before). The tool
+  writes `frames`/`verts`/`bones` (+ `indices` for a subset) to an `.npz`;
+  Python callers can skip the file with `fetch_geometry_frames()` /
+  `parse_geometry_frames()`, which return numpy arrays. JSON error bodies
+  (incl. `detail`) become `ToolError`. Mock-tested against a hand-built
+  `DZGF` payload; live-verified 2026-10-20 on Genesis 8 Female: 10 frames x
+  16,556 vertices + 1 bone in 433 ms (~43 ms/frame incl. scene update),
+  vertex subset and error path behave as specified.
+- **Dependency `numpy>=1.26`.**
+
 ## 0.5.8+bb.13 — 2026-10-18
 
 ### Added

@@ -41,10 +41,10 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.13
+- **Version:** 0.5.8+bb.14
 - **Bridge:** Connects to DazScriptServer (port 18811)
-- **Registry:** 166 tools registered across 15 tool modules.
-- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 15 modules so `@mcp.tool()` decorators fire at import time.
+- **Registry:** 167 tools registered across 16 tool modules.
+- **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 16 modules so `@mcp.tool()` decorators fire at import time.
 - **Phase 4.8:** Lighting Animation — `daz_animate_light`, `daz_create_light_sequence`
 - **Phase 4.9:** Shot Planning — `daz_plan_shot`, `daz_create_storyboard`
 - **Phase 4.10:** Focus & DOF — `daz_set_focus_point`, `daz_animate_focus_pull`
@@ -119,6 +119,10 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
   `DzFollowingProjectionOptions.disableMorphProjection` an gefitteten Items und entfernt die
   schon projizierten Körper-Morphs/JCMs; `enabled=None` = nur Bericht);
   `daz_fit_clothing(morph_projection=False)` setzt den Schalter vor dem Fitten
+- **Phase 6.26:** Schneller Geometrie-Export *(fork-only)* — `daz_export_geometry_frames`
+  (`tools/geometry.py`; Client für `POST /geometry/frames` aus daz-script-server ≥ 2.9.2+bb.2,
+  binäre `DZGF`-Antwort → numpy → `.npz`). Aus Python direkt: `fetch_geometry_frames()`.
+  Braucht `numpy` (neue Abhängigkeit).
 
 ## Render API (DazScriptServer native endpoints)
 `daz_render_async`, `daz_render_with_camera_async`, `daz_batch_render_cameras_async` use

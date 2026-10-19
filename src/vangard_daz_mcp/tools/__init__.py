@@ -19,3 +19,4 @@ from . import cinematic     # noqa: F401
 from . import wardrobe      # noqa: F401
 from . import hair          # noqa: F401
 from . import rigging       # noqa: F401
+from . import geometry      # noqa: F401
