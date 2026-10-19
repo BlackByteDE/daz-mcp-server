@@ -34,7 +34,9 @@ gehören nicht hierher — siehe CLAUDE.md.
 
 | Was | Quelle | Seit | Details |
 |---|---|---|---|
+| Animiertes Pose-Preset headless sichern (`DzPoseAssetFilter`, Frame-Bereich, Figur per Label) — schreibt bisher eine leere `.duf` (0 Kanäle) bei `errCode 0` | pinkcharakter | 2026-10-19 | [daz-mixamo-bridge-retarget.md](../pinkcharakter/docs/daz-mixamo-bridge-retarget.md) (Catwalk stark) |
 | Signal/Ereignis „Kleidungs-Smoothing fertig“ nach Frame-Wechsel liefern (statt fester `--settle-seconds`) | pinkcharakter | 2026-10-19 | Bug #46 — [bugs/render-viewport.md](../pinkcharakter/docs/bugs/render-viewport.md) |
+| Schneller Geometrie-Export: verformte Haut einer Figur (Base-Auflösung, optional nur Vertex-Indizes/Surfaces) für eine Frame-Liste als Binärdaten (float32) statt DazScript-Schleife + JSON — native Endpoint im `daz-script-server`-Plugin (C++/SDK), nur Figur auswerten (`forceCacheUpdate`, kein `Scene.update`). Nutzer: `daz_arm_clearance.py`, `daz_hand_clearance.py`, Hair-Bakes, Garment-Morphs; Messung stage_2: DazScript-Vertex-Schleife ~140 ms/Frame bei 16.556 Vertices + JSON-Transport | pinkcharakter | 2026-10-19 | [daz-mixamo-bridge-retarget.md](../pinkcharakter/docs/daz-mixamo-bridge-retarget.md) (Arme klippen, Laufzeit) |
 
 ## Später / optional
 
