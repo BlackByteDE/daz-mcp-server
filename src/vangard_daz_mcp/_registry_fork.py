@@ -346,6 +346,95 @@ _TRIGGER_MODIFIER_ASSET_SAVE_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
 })()
 """
 
+# Phase 6.27: Pose Preset save (static or animated range)
+#
+# Headless, live-verified 2026-10-24 against a GUI-saved animated preset
+# (identical channel set). The old "errCode 0, empty .duf" came from a wrong
+# NodeNames layout. What DzPoseAssetFilter reads in silent mode:
+#   - RunSilent: Bool. Root: RootLabel (findNodeByLabel) or, if empty, the
+#     primary selection — we select the figure and leave RootLabel empty.
+#   - NodeNames: one sub-settings entry per node, keyed by the skeleton's
+#     NAME or a bone NAME; its String entries' VALUES are property internal
+#     names (transforms, and morph names under the skeleton key); keys inside
+#     are ignored. Offering every property is fine: unless BypassFilter is
+#     set, the filter keeps only what the GUI's Pose Preset dialog would.
+#   - SaveCurFrame (Bool, default true) / StartFrame / EndFrame (Int, frames).
+#   - CompressOutput: Bool. Return codes: 98 (no root node / NodeNames empty),
+#     528 (empty output path).
+_SAVE_POSE_PRESET_SCRIPT = "(function(){\n" + _RESOLVE_NODE_JS + """
+    var args = getArguments()[0] || {};
+    var fig = resolveNode(args.figureLabel);
+    var skel = fig.getSkeleton ? fig.getSkeleton() : null;
+    if (!skel) throw new Error("'" + fig.getLabel() + "' is not a figure (no skeleton)");
+
+    var step = Scene.getTimeStep();
+    var range = Scene.getAnimRange();
+    var start = (args.startFrame !== undefined) ? args.startFrame : Math.round(range.start / step);
+    var end = (args.endFrame !== undefined) ? args.endFrame : Math.round(range.end / step);
+    if (!args.currentFrameOnly && end < start) {
+        throw new Error("endFrame (" + end + ") is before startFrame (" + start + ")");
+    }
+
+    var nodes = [skel].concat(skel.getAllBones());
+    var nn = new DzSettings();
+    var offered = 0;
+    var i, j, k;
+    for (i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var sub = new DzSettings();
+        k = 0;
+        for (j = 0; j < n.getNumProperties(); j++) {
+            var p = n.getProperty(j);
+            if (p.inherits("DzNumericProperty")) sub.setStringValue(String(k++), p.name);
+        }
+        if (n === skel && args.includeMorphs !== false && skel.getObject()) {
+            var obj = skel.getObject();
+            for (j = 0; j < obj.getNumModifiers(); j++) {
+                var m = obj.getModifier(j);
+                if (m.inherits("DzMorph")) sub.setStringValue(String(k++), m.getName());
+            }
+        }
+        if (k) nn.setSettingsValue(n.getName(), sub);
+        offered += k;
+    }
+
+    var prevSel = Scene.getSelectedNodeList();
+    Scene.selectAllNodes(false);
+    skel.select(true);
+
+    var f = new DzPoseAssetFilter();
+    var s = new DzFileIOSettings();
+    f.getDefaultOptions(s);
+    s.setBoolValue("RunSilent", true);
+    s.setStringValue("RootLabel", "");
+    s.setSettingsValue("NodeNames", nn);
+    s.setBoolValue("SaveCurFrame", !!args.currentFrameOnly);
+    s.setIntValue("StartFrame", start);
+    s.setIntValue("EndFrame", end);
+    s.setBoolValue("BypassFilter", args.bypassFilter === true);
+    if (args.compressOutput !== undefined) s.setBoolValue("CompressOutput", !!args.compressOutput);
+
+    var err;
+    try {
+        err = f.doSave(s, args.outputPath, "");
+    } finally {
+        Scene.selectAllNodes(false);
+        for (i = 0; i < prevSel.length; i++) prevSel[i].select(true);
+    }
+    var code = (err && err.valueOf) ? err.valueOf() : err;
+    if (code !== 0) {
+        var why = { 98: "no root figure, or nothing to save", 528: "empty output path" }[code] ||
+            "check DAZ Studio's log.txt";
+        throw new Error("DzPoseAssetFilter.doSave failed (error code " + code + "): " + why);
+    }
+    return { success: true, figure: fig.getLabel(), outputPath: args.outputPath,
+             currentFrameOnly: !!args.currentFrameOnly,
+             startFrame: args.currentFrameOnly ? null : start,
+             endFrame: args.currentFrameOnly ? null : end,
+             propertiesOffered: offered };
+})()
+"""
+
 # Phase 6.15: Extra bones / skin weights (Bug-Katalog #30)
 #
 # DzSkinBinding does not pick up a newly added DzBoneBinding's weights until
@@ -1089,6 +1178,11 @@ _REGISTRY_FORK: dict[str, tuple[str, str]] = {
         "Support Asset > Modifier Asset(s)) — blocks on a modal dialog, submit via "
         "async endpoint only; daz_save_modifier_asset drives it via UI Automation",
         _TRIGGER_MODIFIER_ASSET_SAVE_SCRIPT,
+    ),
+    "vangard-save-pose-preset": (
+        "Save a figure's pose (current frame or an animated frame range) as a "
+        "Pose Preset via DzPoseAssetFilter.doSave() — headless, no dialogs",
+        _SAVE_POSE_PRESET_SCRIPT,
     ),
     "vangard-create-child-bone": (
         "Create a child DzBone under an existing bone of a figure and register "

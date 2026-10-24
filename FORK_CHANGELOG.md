@@ -6,6 +6,24 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.15 — 2026-10-24
+
+### Added
+
+- **`daz_save_pose_preset(figure_label, output_path, start_frame, end_frame,
+  current_frame_only, include_morphs, bypass_filter, compress_output,
+  thumbnail)`** (`tools/content.py`) — headless Pose Preset save via
+  `DzPoseAssetFilter.doSave()`, static or an animated frame range (default:
+  the scene's animation range, like the dialog's *Animated Range*). Asked for
+  by pinkcharakter (Mixamo-Bridge clips were saved by hand in the GUI). The
+  old "errCode 0, empty `.duf` with 0 channels" was a wrong `NodeNames`
+  layout: one sub-settings entry per skeleton/bone NAME whose values are
+  property internal names. The tool offers every transform and morph and
+  lets the filter pick, so the channel set matches the dialog; it reads the
+  written file back and fails on 0 channels. Live-verified 2026-10-24 on
+  Genesis 8 Female: channel URLs identical to a GUI-saved preset (1953),
+  frame 0–34 gives 35 keys per animated channel, sample keys match the scene.
+
 ## 0.5.8+bb.14 — 2026-10-20
 
 ### Added

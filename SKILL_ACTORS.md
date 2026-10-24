@@ -22,7 +22,11 @@ Tools for morphs, emotions, and movement.
 - `daz_reach_toward`: Pseudo-IK for arms.
 - `daz_interactive_pose`: Pre-built handshake, hug, or fight spacing.
 - `daz_reset_pose`: Clear all pose values to default.
-- `daz_save_pose` / `daz_load_pose`: Save/restore figure poses to/from file.
+- `daz_save_pose` / `daz_load_pose`: Save/restore figure poses to/from file (JSON).
+- `daz_save_pose_preset(figure_label, output_path, start_frame=None, end_frame=None,
+  current_frame_only=False)` *(fork-only)*: Content-Library Pose Preset `.duf`, by default
+  the whole animated range (File > Save As > Pose Preset, *Animated Range*), headless.
+  Same channel set as the dialog; reports `channels`/`animatedChannels`/`maxKeys`.
 
 ## Wardrobe & dForce
 - `daz_list_fitted_items`: See what clothing/hair is fitted to a figure.

@@ -381,6 +381,44 @@ on its tree, but keyboard input works (`*` expands all, Down/Space ticks a row).
 *before* editing the Vendor/Product fields: keyboard ticking alone does not re-enable the
 Accept button. The Asset Directory field is a read-only combo, pick it with the arrow keys.
 
+### Pose Preset export (`DzPoseAssetFilter`) — confirmed live
+
+Same `NodeNames` shape as the Modifier Asset filter, one level per node: **a
+sub-settings entry keyed by the skeleton's or a bone's internal NAME, holding String
+entries whose VALUE is a property internal name** (`XRotate`, ..., morph names under
+the skeleton key). Root = `RootLabel` (findNodeByLabel) or the primary selection.
+
+```javascript
+var skel = fig.getSkeleton();
+Scene.selectAllNodes(false); skel.select(true);
+var f = new DzPoseAssetFilter();
+var s = new DzFileIOSettings();
+f.getDefaultOptions(s);
+s.setBoolValue("RunSilent", true);
+s.setStringValue("RootLabel", "");
+var nn = new DzSettings();
+var nodes = [skel].concat(skel.getAllBones());
+for (var i = 0; i < nodes.length; i++) {
+    var sub = new DzSettings(), k = 0;
+    for (var j = 0; j < nodes[i].getNumProperties(); j++)
+        sub.setStringValue(String(k++), nodes[i].getProperty(j).name);
+    nn.setSettingsValue(nodes[i].getName(), sub);   // KEY = node NAME
+}
+s.setSettingsValue("NodeNames", nn);
+s.setBoolValue("SaveCurFrame", false);              // true (default) = current frame only
+s.setIntValue("StartFrame", 0);                     // frames, not ticks
+s.setIntValue("EndFrame", 34);                      // inclusive
+s.setBoolValue("BypassFilter", false);              // false = the dialog's channel set
+f.doSave(s, "C:/.../Presets/Poses/Walk.duf", "");  // 0 on success
+```
+
+Offer every property: with `BypassFilter` false the filter keeps exactly what the
+dialog saves (verified: identical channel URLs to a GUI preset); `true` writes all of
+them (~2x the channels, incl. "Disable Transform" etc.). BROKEN, do not retry: the
+figure LABEL as a String value in `NodeNames` (the Wearable layout) — returns 0 and
+writes a 242-byte `.duf` with 0 channels; bone names as plain String keys → 98.
+Tool: `daz_save_pose_preset`.
+
 ### Hidden polygons (Geometry Editor hide) — confirmed live (Bug-Katalog #35)
 
 The hidden state lives on the **base** mesh, not on the cached (SubD) mesh:

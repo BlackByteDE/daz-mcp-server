@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json as _json
 import os
 import time
@@ -696,3 +697,106 @@ async def daz_save_modifier_asset(
         "morphs": ui["ticked"],
         "files": files,
     }
+
+
+def _pose_preset_stats(path: Path) -> dict[str, int]:
+    """Count the channels in a written pose preset (gzip or plain DSON)."""
+    raw = path.read_bytes()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    channels = _json.loads(raw).get("scene", {}).get("animations", [])
+    key_counts = [len(c.get("keys", [])) for c in channels]
+    return {
+        "channels": len(channels),
+        "animatedChannels": sum(1 for n in key_counts if n > 1),
+        "maxKeys": max(key_counts, default=0),
+    }
+
+
+@mcp.tool()
+async def daz_save_pose_preset(
+    figure_label: str,
+    output_path: str,
+    start_frame: int | None = None,
+    end_frame: int | None = None,
+    current_frame_only: bool = False,
+    include_morphs: bool = True,
+    bypass_filter: bool = False,
+    compress_output: bool | None = None,
+    thumbnail: bool = False,
+) -> dict[str, Any]:
+    """Save a figure's pose as a Content-Library Pose Preset (.duf) — by
+    default the whole animated frame range, like the dialog's *Animated
+    Range* option.
+
+    Headless equivalent of **File > Save As > Pose Preset...** via
+    ``DzPoseAssetFilter.doSave()`` — no dialogs. The channel set matches a
+    GUI-saved preset: every bone transform and morph is offered to the filter,
+    which keeps what the Pose Preset dialog would. Load the result with
+    ``daz_load_file`` (merge) on a selected figure.
+
+    Args:
+        figure_label: Display label, internal name, elementID, or
+            ``Parent/Label`` of the figure.
+        output_path: Absolute path for the ``.duf`` (extension forced to
+            ``.duf``), typically ``<content dir>/Presets/Poses/<Name>.duf``.
+        start_frame: First frame of the range (default: scene animation
+            range start).
+        end_frame: Last frame, inclusive (default: scene animation range end).
+        current_frame_only: Save only the current frame (static pose);
+            ``start_frame``/``end_frame`` are then ignored.
+        include_morphs: Offer the figure's morphs too (default True — the
+            filter still drops non-pose morphs, as the dialog does).
+        bypass_filter: Skip the dialog's property filter and save every
+            offered property (default False; gives many more channels).
+        compress_output: Compress the ``.duf`` (plugin default: on).
+        thumbnail: Also render ``.duf.png``/``.tip.png`` via
+            ``daz_render_asset_thumbnail`` at the current frame (default
+            False). A failed render is reported as ``thumbnailError``.
+
+    Returns:
+        Dict with success, figure, outputPath, startFrame/endFrame (None for
+        current_frame_only), and — when the file is reachable from this
+        machine — channels, animatedChannels and maxKeys (keys per channel,
+        i.e. frames saved); ``thumbnails``/``thumbnailError`` if requested.
+
+    Examples:
+        daz_save_pose_preset(
+            "Genesis 8 Female",
+            "C:/Users/Public/Documents/My DAZ 3D Library/Presets/Poses/Walk.duf",
+            start_frame=0, end_frame=34,
+        )
+    """
+    if not current_frame_only and None not in (start_frame, end_frame) and end_frame < start_frame:
+        raise ToolError(f"end_frame ({end_frame}) is before start_frame ({start_frame})")
+    duf = Path(output_path).with_suffix(".duf")
+    payload: dict[str, Any] = {
+        "figureLabel": figure_label,
+        "outputPath": duf.as_posix(),
+        "currentFrameOnly": current_frame_only,
+        "includeMorphs": include_morphs,
+        "bypassFilter": bypass_filter,
+    }
+    if start_frame is not None:
+        payload["startFrame"] = start_frame
+    if end_frame is not None:
+        payload["endFrame"] = end_frame
+    if compress_output is not None:
+        payload["compressOutput"] = compress_output
+    result = await _execute_by_id("vangard-save-pose-preset", payload)
+
+    if duf.is_file():
+        stats = _pose_preset_stats(duf)
+        if stats["channels"] == 0:
+            raise ToolError(
+                f"doSave succeeded, but {duf} contains no channels — nothing on "
+                f"'{result['figure']}' passed the Pose Preset filter"
+            )
+        result.update(stats)
+    if thumbnail:
+        try:
+            thumbs = await daz_render_asset_thumbnail([result["figure"]], result["outputPath"])
+            result["thumbnails"] = thumbs["files"]
+        except ToolError as exc:
+            result["thumbnailError"] = str(exc)
+    return result
