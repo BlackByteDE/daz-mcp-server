@@ -35,7 +35,6 @@ gehören nicht hierher — siehe CLAUDE.md.
 | Was | Quelle | Seit | Details |
 |---|---|---|---|
 | Animiertes Pose-Preset headless sichern (`DzPoseAssetFilter`, Frame-Bereich, Figur per Label) — schreibt bisher eine leere `.duf` (0 Kanäle) bei `errCode 0` | pinkcharakter | 2026-10-19 | [daz-mixamo-bridge-retarget.md](../pinkcharakter/docs/daz-mixamo-bridge-retarget.md) (Catwalk stark) |
-| Signal/Ereignis „Kleidungs-Smoothing fertig“ nach Frame-Wechsel liefern (statt fester `--settle-seconds`) — Untersuchung und ggf. C++-Signal → `../daz-script-server/FORK_TODO.md` | pinkcharakter | 2026-10-19 | Bug #46 — [bugs/render-viewport.md](../pinkcharakter/docs/bugs/render-viewport.md) |
 
 ## Später / optional
 
