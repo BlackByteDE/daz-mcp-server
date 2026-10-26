@@ -6,6 +6,26 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.16 — 2026-10-27
+
+### Added
+
+- **`daz_export_geometry_frames` / `fetch_geometry_frames`: channel override
+  sets** (`channels` + `values`, `tools/geometry.py`) — client for the
+  override sets of `POST /geometry/frames` (daz-script-server ≥ 2.9.2+bb.3,
+  `DZGF` v2). Every frame is evaluated once per set with the set's channel
+  values applied temporarily (bone/morph/node property; limits and ERC apply
+  as from DazScript; channels are restored, no keys remain). The result gets
+  a sets axis: `verts` `[F, S, V, 3]`, `bones` `[F, S, B, 3]`, plus
+  `num_sets` and `mismatches` (restores the server could not verify; should
+  be 0). Asked for by pinkcharakter (Bug 48): IK/finger loops ran ~234 ms per
+  evaluation as DazScript calls. Live-verified 2026-10-27 on Genesis 8
+  Female: 10 evaluations of all 16,556 vertices in 634 ms (~63 ms each),
+  `mismatches=0`, scene unchanged afterwards, unknown bone → clean HTTP 400.
+  Locked channels (e.g. `lIndex2` `XRotate`) and values beyond a channel's
+  limits are silently clamped, exactly as in DazScript.
+  Vertex-subset (`indices`/`surfaces`) was already passed through.
+
 ## 0.5.8+bb.15 — 2026-10-24
 
 ### Added

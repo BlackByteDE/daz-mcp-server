@@ -34,6 +34,7 @@ gehören nicht hierher — siehe CLAUDE.md.
 
 | Was | Quelle | Seit | Details |
 |---|---|---|---|
+| `daz_execute`/`daz_execute_file`: Timeout pro Aufruf; nach einem Timeout „läuft noch“ + Request-ID statt Fehler, Folgeaufrufe bis zum Ende sperren/ablehnen; Abbruch eines laufenden Skripts, wenn machbar | pinkcharakter | 2026-10-26 | Bug 47, [../pinkcharakter/docs/bugs/tooling-tests.md](../pinkcharakter/docs/bugs/tooling-tests.md) |
 
 ## Später / optional
 
