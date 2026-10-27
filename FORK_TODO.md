@@ -40,3 +40,4 @@ gehören nicht hierher — siehe CLAUDE.md.
 
 | Was | Quelle | Seit | Details |
 |---|---|---|---|
+| `daz_export_geometry_frames` reicht `vertices` (bool, Default `true`) an `POST /geometry/frames` durch — `false` liefert nur Bone-Ursprünge (`numVerts = 0`, braucht `bones`), ab daz-script-server `2.9.2+bb.4` | daz-script-server | 2026-10-27 | Bug 48, [../pinkcharakter/docs/bugs/tooling-tests.md](../pinkcharakter/docs/bugs/tooling-tests.md) |
