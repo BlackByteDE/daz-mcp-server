@@ -237,3 +237,41 @@ async def test_tool_writes_npz(tmp_path):
         assert npz["indices"].tolist() == [4, 8, 15]
         np.testing.assert_array_equal(npz["verts"], verts)
         np.testing.assert_array_equal(npz["bones"], bones)
+
+
+@respx.mock
+async def test_fetch_vertices_false_sends_flag_and_decodes_bones_only():
+    bones = np.arange(2 * 3 * 3, dtype="<f4").reshape(2, 3, 3)
+    route = respx.post(f"{BASE_URL}/geometry/frames").mock(
+        return_value=_ok(_payload([1, 2], np.zeros((2, 0, 3), "<f4"), bones)))
+    data = await fetch_geometry_frames([1, 2], bones=["lHand", "lIndex1", "lIndex2"], vertices=False)
+    assert _json.loads(route.calls[0].request.content) == {
+        "frames": [1, 2], "resolution": "base", "bones": ["lHand", "lIndex1", "lIndex2"],
+        "vertices": False,
+    }
+    assert data.verts.shape == (2, 0, 3)
+    np.testing.assert_array_equal(data.bones, bones)
+
+
+@pytest.mark.parametrize("kwargs, match", [
+    (dict(vertices=False), "needs bones"),
+    (dict(vertices=False, bones=[]), "needs bones"),
+    (dict(vertices=False, bones=["a"], indices=[1]), "cannot be combined"),
+    (dict(vertices=False, bones=["a"], surfaces=["Legs"]), "cannot be combined"),
+])
+async def test_fetch_validates_vertices_false(kwargs, match):
+    with pytest.raises(ToolError, match=match):
+        await fetch_geometry_frames([0], **kwargs)
+
+
+@respx.mock
+async def test_tool_vertices_false_writes_bones_only_npz(tmp_path):
+    bones = np.ones((1, 2, 3), "<f4")
+    respx.post(f"{BASE_URL}/geometry/frames").mock(
+        return_value=_ok(_payload([0], np.zeros((1, 0, 3), "<f4"), bones)))
+    result = await daz_export_geometry_frames(
+        [0], str(tmp_path / "b.npz"), bones=["a", "b"], vertices=False)
+    assert (result["num_verts"], result["num_bones"]) == (0, 2)
+    assert result["verts_shape"] == [1, 0, 3]
+    with np.load(result["path"]) as npz:
+        np.testing.assert_array_equal(npz["bones"], bones)

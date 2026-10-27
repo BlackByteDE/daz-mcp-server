@@ -11,6 +11,9 @@ evaluated once per set with the set's channel values applied temporarily (no
 keys left behind) — pose search and finite differences without a DazScript
 round trip per evaluation.
 
+``vertices=False`` (daz-script-server >= 2.9.2+bb.4) returns only the world-space
+bone origins and skips the mesh deformation — for pure bone IK loops.
+
 ``fetch_geometry_frames`` is the library entry point (returns numpy arrays,
 importable from other Python projects); ``daz_export_geometry_frames`` is the
 MCP tool, which stores the arrays in an ``.npz`` file because numpy arrays
@@ -118,11 +121,17 @@ def _build_request(
     scene_update: bool,
     channels: list[dict[str, str]] | None = None,
     values: list[list[float]] | None = None,
+    vertices: bool = True,
 ) -> dict[str, Any]:
     if not frames:
         raise ToolError("frames must not be empty")
     if resolution not in ("base", "current"):
         raise ToolError(f"resolution must be 'base' or 'current', got {resolution!r}")
+    if not vertices:
+        if not bones:
+            raise ToolError("vertices=False needs bones (nothing else would be returned)")
+        if indices or surfaces:
+            raise ToolError("indices/surfaces select vertices and cannot be combined with vertices=False")
     if (channels is None) != (values is None):
         raise ToolError("channels and values must be given together")
     if channels is not None:
@@ -150,6 +159,8 @@ def _build_request(
     if channels is not None:
         body["channels"] = [dict(c) for c in channels]
         body["values"] = [[float(v) for v in row] for row in values]
+    if not vertices:
+        body["vertices"] = False
     if not scene_update:
         body["sceneUpdate"] = False
     return body
@@ -166,6 +177,7 @@ async def fetch_geometry_frames(
     timeout: float | None = None,
     channels: list[dict[str, str]] | None = None,
     values: list[list[float]] | None = None,
+    vertices: bool = True,
 ) -> GeometryFrames:
     """Call ``POST /geometry/frames`` and return the decoded arrays.
 
@@ -189,12 +201,16 @@ async def fetch_geometry_frames(
             per channel. Every frame is evaluated once per set with these values
             applied temporarily; the result gets a sets axis (``verts`` is then
             ``[F, S, V, 3]``). Channels are restored afterwards, no keys remain.
+        vertices: ``False`` returns only the ``bones`` origins (``verts`` has
+            ``V = 0``) and skips the mesh deformation — needs ``bones``, no
+            ``indices``/``surfaces``. Needs daz-script-server >= 2.9.2+bb.4.
 
     Raises ToolError for network errors, a DAZ-side error (JSON body) or a
     malformed payload.
     """
     body = _build_request(
-        frames, node, indices, surfaces, bones, resolution, scene_update, channels, values)
+        frames, node, indices, surfaces, bones, resolution, scene_update, channels, values,
+        vertices)
     if timeout is None:
         timeout = max(DAZ_TIMEOUT, 10.0 + 0.5 * len(frames) * (len(values) if values else 1))
     client = get_http_client()
@@ -237,6 +253,7 @@ async def daz_export_geometry_frames(
     scene_update: bool = True,
     channels: list[dict[str, str]] | None = None,
     values: list[list[float]] | None = None,
+    vertices: bool = True,
 ) -> dict[str, Any]:
     """Export the deformed vertices of a figure for many frames to an .npz file.
 
@@ -272,6 +289,10 @@ async def daz_export_geometry_frames(
                 ``verts``/``bones`` in the file then have a sets axis:
                 ``[F, S, V, 3]`` / ``[F, S, B, 3]``. Use several rows for finite
                 differences or pose search instead of one DazScript call each.
+        vertices: ``False`` returns only the ``bones`` origins (``num_verts`` = 0,
+                  ``verts`` empty) and skips the mesh deformation — for pure bone
+                  IK loops. Needs ``bones``; not combinable with ``indices`` /
+                  ``surfaces``. Needs daz-script-server >= 2.9.2+bb.4.
 
     Returns:
       - path: the written file
@@ -284,6 +305,7 @@ async def daz_export_geometry_frames(
     data = await fetch_geometry_frames(
         frames, node=node, indices=indices, surfaces=surfaces, bones=bones,
         resolution=resolution, scene_update=scene_update, channels=channels, values=values,
+        vertices=vertices,
     )
     path = os.path.abspath(output_path)
     if not path.lower().endswith(".npz"):

@@ -41,7 +41,7 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
 - **@SKILL_CINEMA.md**: Cameras, lighting, animation, shot composition, and rendering.
 
 ## Architecture Summary
-- **Version:** 0.5.8+bb.16
+- **Version:** 0.5.8+bb.17
 - **Bridge:** Connects to DazScriptServer (port 18811)
 - **Registry:** 168 tools registered across 16 tool modules.
 - **Structure:** Modular — `_mcp.py` holds shared FastMCP instance; `tools/__init__.py` imports all 16 modules so `@mcp.tool()` decorators fire at import time.
@@ -125,7 +125,8 @@ keinen Changelog — dessen Änderungen stehen nur in der Commit-Historie von
   Braucht `numpy` (neue Abhängigkeit). Optional `channels` + `values` (Override-Sätze,
   DZGF v2, Bug-Katalog #48): jeder Frame wird je Satz mit temporär gesetzten Kanälen
   ausgewertet, Ergebnis mit Sets-Achse `[F, S, V, 3]`; braucht einen daz-script-server mit
-  Override-Unterstützung.
+  Override-Unterstützung. `vertices=False` (daz-script-server ≥ 2.9.2+bb.4): nur
+  Bone-Ursprünge, kein Mesh (`num_verts = 0`; braucht `bones`, kein `indices`/`surfaces`).
 - **Phase 6.27:** Pose Preset Export *(fork-only)* — `daz_save_pose_preset` (headless über
   `DzPoseAssetFilter.doSave()`, statisch oder animierter Frame-Bereich; das alte „leere
   `.duf`, 0 Kanäle“ war ein falsches `NodeNames`-Layout — Key = Knochen-Name, Werte =

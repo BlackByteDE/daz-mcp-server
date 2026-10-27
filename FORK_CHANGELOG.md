@@ -6,6 +6,23 @@ This fork's version scheme is `<upstream-version>+bb.<n>` — see
 [bluemoonfoundry/daz-mcp-server](https://github.com/bluemoonfoundry/daz-mcp-server)
 are not duplicated here — only fork-specific changes are listed below.
 
+## 0.5.8+bb.17 — 2026-10-27
+
+### Added
+
+- **`daz_export_geometry_frames` / `fetch_geometry_frames`: `vertices`**
+  (`tools/geometry.py`) — `vertices=False` passes `"vertices": false` to
+  `POST /geometry/frames` (daz-script-server ≥ 2.9.2+bb.4): only the
+  world-space `bones` origins come back (`num_verts = 0`), the mesh
+  deformation is skipped (~6 ms less per evaluation, bit-identical bone
+  origins). For pure bone IK loops with many override sets. Needs `bones`;
+  `indices`/`surfaces` are rejected client-side (same rules as the server).
+  Asked for by pinkcharakter (Bug 48). Live-verified 2026-10-27 against
+  daz-script-server 2.9.2+bb.4: bone origins bit-identical to the mesh path,
+  override sets work (`verts` `[F, S, 0, 3]`, `mismatches=0`), scene
+  unchanged; `vertices=False` without `bones` fails client-side.
+  `FORK_TODO.md` entry removed.
+
 ## 0.5.8+bb.16 — 2026-10-27
 
 ### Added
